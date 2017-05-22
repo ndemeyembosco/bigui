@@ -24,6 +24,7 @@ import qualified Data.Text.Lazy as DT
 import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Diagrams.Backend.SVG.CmdLine
+import Diagrams.Query
 
 import qualified Text.Parsec            as P
 import           Text.Parsec.Char
@@ -37,6 +38,8 @@ import           Text.Parsec.Prim
 import           Text.Parsec.String
 import           Text.Parsec.Token
 import           Data.Maybe
+import           Data.IORef
+import           Control.Monad.IO.Class
 
 
 
@@ -74,6 +77,8 @@ parseSVG s@(x:xs)
              |otherwise =  parseSVG xs
 
 
+diagTuple :: Diagram B -> (T2 Double, Element)
+diagTuple myDiag = renderDiaT SVG (SVGOptions (mkWidth 250) Nothing "" [] True) myDiag
 
 renderedElement :: Diagram B -> Element
 renderedElement myDiag =
@@ -82,8 +87,9 @@ renderedElement myDiag =
 -- renderedText :: Diagram B -> DT.Text
 -- renderedText myDiag = renderText renderedElement
 
-renderedString :: Diagram B -> String
-renderedString = DT.unpack.renderText.renderedElement
+renderedString :: Diagram B -> (T2 Double, String)
+renderedString myDiag = case diagTuple myDiag of
+  (t, rendered) -> (t, DT.unpack $ renderText $ rendered)
 
 ------------ Compiling ---------------------------------------------
 
@@ -141,12 +147,30 @@ main = do
 
 setup :: T.Window -> T.UI ()
 setup window = void $ do
-  diag <- UI.div T.#. "diagram"
+
+  diag <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "600px"), ("border", "1px solid #000")]
   codeArea <- UI.textarea T.# T.set (T.attr "rows") "50" T.# T.set (T.attr "cols") "50"
   compButton <- UI.button # T.set T.text "Compile"
   T.getBody window T.#+ [UI.row [UI.column [T.element diag],UI.column [T.element codeArea, T.element compButton]]]
+
+  diaRef <- liftIO $ (newIORef mempty :: IO (IORef (T2 Double)))
+  dRef   <- liftIO $ (newIORef mempty :: IO (IORef (Diagram B)))
+
   T.on UI.click compButton $ \_ -> do
     frmCode <- T.get T.value codeArea
     T.liftIO $ print frmCode
-    newDiagram <- UI.div T.#. "newDiagram" # T.set T.html (parseSVG $ renderedString (fromJust (evalExpr frmCode)))
+    let diagram = fromJust $ evalExpr frmCode
+    let (t, codeStr) = renderedString diagram
+    liftIO $ writeIORef diaRef (inv t)
+    liftIO $ writeIORef dRef diagram
+
+    newDiagram <- UI.div T.#. "newDiagram" # T.set T.html (parseSVG codeStr)
     T.element diag T.# T.set T.children [newDiagram]
+
+  T.on UI.mousedown diag $ \(x, y) -> do
+    diat <- liftIO $ readIORef diaRef
+    dia <- liftIO $ readIORef dRef
+
+    let pt = transform diat (p2 (fromIntegral x, fromIntegral y))
+    liftIO $ print $ show pt
+    liftIO $ print $ show (sample dia pt)
