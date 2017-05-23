@@ -52,21 +52,32 @@ data SimpleDiagram where
   Atop      :: SimpleDiagram    -> SimpleDiagram -> SimpleDiagram
   deriving (Show)
 
+data CHOICE = LEFT | RIGHT
+    deriving (Show, Eq)
 
-interpSimpleDiagram :: SimpleDiagram -> Diagram B
-interpSimpleDiagram Circle                 = circle 1
-interpSimpleDiagram (Scale d sd)           = interpSimpleDiagram sd # scale d
-interpSimpleDiagram (Translate c@(x, y) d) = interpSimpleDiagram d # translate (r2 c)
-interpSimpleDiagram (Atop d1 d2)           = (interpSimpleDiagram d1) `atop` (interpSimpleDiagram d2)
+type PATH = [CHOICE]
+
+interpSimpleDiagram' :: PATH -> SimpleDiagram -> QDiagram SVG V2 Double [PATH]
+interpSimpleDiagram' p  Circle                = circle 1 # value [p]
+interpSimpleDiagram' p (Scale d sd)           = interpSimpleDiagram' p sd # scale d
+interpSimpleDiagram' p (Translate c@(x, y) d) = interpSimpleDiagram' p  d # translate (r2 c)
+interpSimpleDiagram' p (Atop d1 d2)           = interpSimpleDiagram' (p ++ [LEFT]) d1 `atop` interpSimpleDiagram' (p ++ [RIGHT]) d2
+
+
+interpSD :: SimpleDiagram -> QDiagram SVG V2 Double [PATH]
+interpSD sd = interpSimpleDiagram' [] sd
+
 
 example1 :: SimpleDiagram
-example1 = Atop Circle (Translate (1.0, 1.0) (Scale 2.0 Circle))
+example1 = Atop Circle (Translate (1.0, 1.0) (Scale 2.0 (Atop Circle (Translate (1.0, 1.0) Circle))))
 
-renderSimpleDiagram :: SimpleDiagram -> Diagram B
-renderSimpleDiagram = interpSimpleDiagram
+renderSimpleDiagram' :: SimpleDiagram -> QDiagram SVG V2 Double [PATH]
+renderSimpleDiagram' = interpSD
 
-myDiag :: Diagram B
-myDiag = renderSimpleDiagram example1
+
+
+myDiag' :: QDiagram SVG V2 Double [PATH]
+myDiag' = renderSimpleDiagram' example1
 
 -------------- Dealing with the SVG -------------------
 
@@ -77,18 +88,12 @@ parseSVG s@(x:xs)
              |otherwise =  parseSVG xs
 
 
-diagTuple :: Diagram B -> (T2 Double, Element)
-diagTuple myDiag = renderDiaT SVG (SVGOptions (mkWidth 250) Nothing "" [] True) myDiag
 
-renderedElement :: Diagram B -> Element
-renderedElement myDiag =
-  renderDia SVG (SVGOptions (mkWidth 250) Nothing "" [] True) myDiag
+diagTuple' :: QDiagram SVG V2 Double [PATH] -> (T2 Double, Element)
+diagTuple' myDiag' = renderDiaT SVG (SVGOptions (mkWidth 250) Nothing "" [] True) myDiag'
 
--- renderedText :: Diagram B -> DT.Text
--- renderedText myDiag = renderText renderedElement
-
-renderedString :: Diagram B -> (T2 Double, String)
-renderedString myDiag = case diagTuple myDiag of
+renderedString' :: QDiagram SVG V2 Double [PATH] -> (T2 Double, String)
+renderedString' myDiag = case diagTuple' myDiag of
   (t, rendered) -> (t, DT.unpack $ renderText $ rendered)
 
 ------------ Compiling ---------------------------------------------
@@ -134,9 +139,9 @@ parseAtom = Circle <$ myreserved "circle"
     <|> myparens parseAtom
 
 
-evalExpr :: String -> Maybe (Diagram B)
-evalExpr s = case myparse parseAtom s of
-  Right sd -> Just (interpSimpleDiagram sd)
+evalExpr' :: String -> Maybe (QDiagram SVG V2 Double [PATH])
+evalExpr' s = case myparse parseAtom s of
+  Right sd -> Just (interpSD sd)
   Left _   -> Nothing
 
 -----------GUI ---------------------------------
@@ -154,13 +159,13 @@ setup window = void $ do
   T.getBody window T.#+ [UI.row [UI.column [T.element diag],UI.column [T.element codeArea, T.element compButton]]]
 
   diaRef <- liftIO $ (newIORef mempty :: IO (IORef (T2 Double)))
-  dRef   <- liftIO $ (newIORef mempty :: IO (IORef (Diagram B)))
+  dRef   <- liftIO $ (newIORef mempty :: IO (IORef (QDiagram SVG V2 Double [PATH])))
 
   T.on UI.click compButton $ \_ -> do
     frmCode <- T.get T.value codeArea
     T.liftIO $ print frmCode
-    let diagram = fromJust $ evalExpr frmCode
-    let (t, codeStr) = renderedString diagram
+    let diagram = fromJust $ evalExpr' frmCode
+    let (t, codeStr) = renderedString' diagram
     liftIO $ writeIORef diaRef (inv t)
     liftIO $ writeIORef dRef diagram
 
@@ -173,4 +178,4 @@ setup window = void $ do
 
     let pt = transform diat (p2 (fromIntegral x, fromIntegral y))
     liftIO $ print $ show pt
-    liftIO $ print $ show (sample dia pt)
+    liftIO $ print $ show $ sample (dia) pt
