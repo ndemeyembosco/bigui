@@ -29,11 +29,11 @@ import Diagrams.Query
 import qualified Text.Parsec            as P
 import           Text.Parsec.Char
 import           Text.Parsec.Combinator
---import           Text.ParserCombinators.Parsec.Number
 import           Text.Parsec.Expr
 import           Text.Parsec.Language
 import           Text.Parsec.Pos
 import           Text.Parsec.Prim
+import           Text.Printf
 
 import           Text.Parsec.String
 import           Text.Parsec.Token
@@ -43,10 +43,14 @@ import           Control.Monad.IO.Class
 
 
 
-
+type Sides = Int
 
 data SimpleDiagram where
+  SEmpty     :: SimpleDiagram
   Circle    :: SimpleDiagram
+  Square    :: SimpleDiagram
+  Triangle  :: SimpleDiagram
+  Polygon   :: Sides            -> SimpleDiagram
   Scale     :: Double           -> SimpleDiagram -> SimpleDiagram
   Translate :: V2 Double        -> SimpleDiagram -> SimpleDiagram
   Atop      :: SimpleDiagram    -> SimpleDiagram -> SimpleDiagram
@@ -58,7 +62,11 @@ data CHOICE = LEFT | RIGHT
 type PATH = [CHOICE]
 
 interpSimpleDiagram' :: PATH -> SimpleDiagram -> QDiagram SVG V2 Double [PATH]
+interpSimpleDiagram' p SEmpty                 = mempty
 interpSimpleDiagram' p  Circle                = circle 1 # value [p]
+interpSimpleDiagram' p Square                 = square 1 # value [p]
+interpSimpleDiagram' p Triangle               = triangle 1 # value [p]
+interpSimpleDiagram' p (Polygon sds)          = regPoly sds 1 # value [p]
 interpSimpleDiagram' p (Scale d sd)           = interpSimpleDiagram' p sd # scale d
 interpSimpleDiagram' p (Translate c d)        = interpSimpleDiagram' p  d # translate c
 interpSimpleDiagram' p (Atop d1 d2)           = interpSimpleDiagram' (p ++ [LEFT]) d1 `atop` interpSimpleDiagram' (p ++ [RIGHT]) d2
@@ -98,7 +106,7 @@ renderedString' myDiag = case diagTuple' myDiag of
 
 ------------ Compiling ---------------------------------------------
 
--- parising ---
+-- parsing ---
 
 lexer :: TokenParser u
 lexer = makeTokenParser $
@@ -121,6 +129,9 @@ ident = identifier lexer
 mydouble :: Parser Double
 mydouble = float lexer
 
+myinteger :: Parser Sides
+myinteger = fromIntegral <$> integer lexer
+
 mywhiteSpace :: Parser ()
 mywhiteSpace = whiteSpace lexer
 
@@ -132,6 +143,9 @@ parseCoord = r2 <$> ((,) <$> (mysymbol "(" *> mydouble <* mysymbol ",") <*> (myd
 
 parseAtom :: Parser SimpleDiagram
 parseAtom = Circle <$ myreserved "circle"
+    <|> Triangle  <$ myreserved "triangle"
+    <|> Square    <$ myreserved "square"
+    <|> Polygon  <$> (myreserved "polygon" *> myinteger)
     <|> Scale <$> (myreserved "scale" *> mydouble) <*> parseAtom
     <|> Translate <$> (myreserved "translate" *> parseCoord) <*> parseAtom
     <|> Atop <$> (myreserved "atop" *> parseAtom) <*> parseAtom
@@ -151,67 +165,28 @@ main = do
 
 setup :: T.Window -> T.UI ()
 setup window = void $ do
-
-  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "600px"), ("border", "1px solid #000")]
-  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "50" T.# T.set (T.attr "cols") "50"
-  compButton         <- UI.button # T.set T.text "Compile"
-  T.getBody window T.#+ [UI.row [UI.column [T.element diagWindow],UI.column [T.element codeArea, T.element compButton]]]
-
-  ptTransformRef         <- liftIO $ (newIORef mempty         :: IO (IORef (T2 Double)))
-  diagramRef             <- liftIO $ (newIORef mempty         :: IO (IORef (QDiagram SVG V2 Double [PATH])))
-  syntaxTreeRef          <- liftIO $ (newIORef Circle         :: IO (IORef (SimpleDiagram)))
-  dragDetected           <- liftIO $ (newIORef False          :: IO (IORef (Bool)))
-  lastMousePos           <- liftIO $ (newIORef (0.0, 0.0)     :: IO (IORef ((Double, Double))))
-  paths                  <- liftIO $ (newIORef []             :: IO (IORef [PATH]))
+  (diagWindow, codeArea, compButton) <- buildUI window
+  (fstDia, trans, _)                 <- renderSDiagram SEmpty
+  (ptTransformRef, diagramRef, syntaxTreeRef, dragDetected, lastMousePos, paths)  <- makeIORefs trans fstDia SEmpty False (0.0, 0.0) []
 
   T.on UI.click compButton $ \_ -> do
-    codeString <- T.get T.value codeArea
-    T.liftIO $ print codeString
-
-    let (Right cdTree) = myparse parseAtom codeString
-    let diagram        = (fromJust $ evalExpr' codeString) # withEnvelope (square 4 :: Diagram B)
-    let (t, svgString) = renderedString' diagram
-
-    liftIO $ writeIORef ptTransformRef (inv t)
-    liftIO $ writeIORef diagramRef diagram
-    liftIO $ writeIORef syntaxTreeRef cdTree
-
-    diagHtmlDiv <- UI.div T.#. "newDiagram" # T.set T.html (parseSVG svgString)
-    T.element diagWindow T.# T.set T.children [diagHtmlDiv]
+    codeString         <- T.get T.value codeArea
+    let (Right cdTree) =  myparse parseAtom codeString
+    drawDiagramWithName codeArea diagWindow "newDiagram" syntaxTreeRef diagramRef cdTree ptTransformRef
 
   T.on UI.mouseup diagWindow $ \_ -> do
     liftIO $ writeIORef dragDetected False
 
   T.on UI.mousemove diagWindow $ \(newXPos, newYPos) -> do
 
-    ptTransformer                   <- liftIO $ readIORef ptTransformRef
-    diagramVar                      <-  liftIO $ readIORef diagramRef
-    syntraxTreeVar                  <-  liftIO $ readIORef syntaxTreeRef
-    (prevXpos, prevYpos)            <- liftIO $ readIORef lastMousePos
-    dragFlag                        <- liftIO $ readIORef dragDetected
-    newpath                         <- liftIO $ readIORef paths
-
+    (ptTransformer, diagramVar, syntraxTreeVar, dragFlag, (prevXpos, prevYpos), newpath) <- readFromIORefs ptTransformRef diagramRef syntaxTreeRef dragDetected lastMousePos paths
     when dragFlag $ do
         let prevPt                           = transform ptTransformer (p2 (prevXpos, prevYpos))
-
-
         let newPt                            = transform ptTransformer (p2 (fromIntegral newXPos, fromIntegral newYPos))
         let newTree                          = (foldr (\d p -> refactorTree p d (newPt .-. prevPt)) syntraxTreeVar) newpath
 
-        let newDiagram                       = (interpSD newTree) # withEnvelope (square 4 :: Diagram B)
-        let (newPtTransformer, newSvgString) = renderedString' newDiagram
-
-        liftIO $ writeIORef diagramRef newDiagram
-        liftIO $ writeIORef ptTransformRef (inv newPtTransformer)
+        drawDiagramWithName  codeArea diagWindow "newDiagram2" syntaxTreeRef diagramRef newTree ptTransformRef
         liftIO $ writeIORef lastMousePos (fromIntegral newXPos, fromIntegral newYPos)
-        liftIO $ writeIORef syntaxTreeRef newTree
-
-        -- liftIO $ print (newPt .-. prevPt)
-        -- liftIO $ print newTree
-
-
-        diagHtmlDiv2 <- UI.div T.#. "newDiagram2" # T.set T.html (parseSVG newSvgString)
-        T.element diagWindow T.# T.set T.children [diagHtmlDiv2]
 
         return ()
 
@@ -219,28 +194,107 @@ setup window = void $ do
 
   T.on UI.mousedown diagWindow $ \(x, y) -> do
     liftIO $ writeIORef dragDetected True
-
-    ptTransformer      <- liftIO $ readIORef ptTransformRef
-    diagramVar         <-  liftIO $ readIORef diagramRef
-    syntraxTreeVar     <-  liftIO $ readIORef syntaxTreeRef
+    (ptTransformer, diagramVar, syntraxTreeVar, _, _, _) <- readFromIORefs ptTransformRef diagramRef syntaxTreeRef dragDetected lastMousePos paths
 
     let pt = transform ptTransformer (p2 (fromIntegral x, fromIntegral y))
     let prevPtSample                     = sample diagramVar pt
+
     liftIO $ writeIORef paths  prevPtSample
     liftIO $ writeIORef lastMousePos (fromIntegral x, fromIntegral y)
-    liftIO $ print pt
-    liftIO $ print $ sample diagramVar pt
 
+    when (prevPtSample == []) $ do
+        let newTree = Atop (createNewCircle pt) syntraxTreeVar
+        drawDiagramWithName  codeArea diagWindow "newDiagram3" syntaxTreeRef diagramRef newTree ptTransformRef
+        return ()
+
+
+
+------------- Set up Helper Methods ---------------------------------------------------------------------------------------------------------------------
+buildUI :: T.Window -> T.UI (T.Element, T.Element, T.Element)
+buildUI window = do
+  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "600px"), ("border", "1px solid #000")]
+  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "50" T.# T.set (T.attr "cols") "50"
+  compButton         <- UI.button # T.set T.text "Compile"
+  T.getBody window T.#+ [UI.row [UI.column [T.element diagWindow],UI.column [T.element codeArea, T.element compButton]]]
+  return (diagWindow, codeArea, compButton)
+
+renderSDiagram :: SimpleDiagram -> T.UI (QDiagram SVG V2 Double [PATH], T2 Double, String)
+renderSDiagram sd = do
+  let fstDia         = interpSD sd # withEnvelope (square 6 :: Diagram B)
+  let (trans, sdiag) = renderedString' fstDia
+  return (fstDia, trans, sdiag)
 
 
 refactorTree :: SimpleDiagram -> PATH -> V2 Double -> SimpleDiagram
 refactorTree Circle _ p             = Translate p Circle
-refactorTree (Scale d sd) pth p     = Scale d (refactorTree sd pth p)
+refactorTree Triangle _ p           = Translate p Triangle
+refactorTree Square   _ p           = Translate p Square
+refactorTree (Polygon n) _ p        = Translate p (Polygon n)
+refactorTree (Scale d sd) pth (V2 d1 d2)     = Scale d (refactorTree sd pth (V2 (d1 / d) (d2 / d)))
 refactorTree (Translate t sd) pth p = case sd of
-  Circle -> Translate (p ^+^ t) sd
-  _      -> Translate t (refactorTree sd pth p)
+  Circle   -> Translate (p ^+^ t) sd
+  Triangle -> Translate (p ^+^ t) sd
+  Square   -> Translate (p ^+^ t) sd
+  Polygon _ -> Translate (p ^+^ t) sd
+  _        -> Translate t (refactorTree sd pth p)
 refactorTree d@(Atop sd1 sd2) pth p   = case pth of
-  -- []      -> Translate p d
   (x:xs)  -> case x of
     LEFT  -> Atop (refactorTree sd1 xs p) sd2
     RIGHT -> Atop sd1 (refactorTree sd2 xs p)
+
+
+drawDiagramWithName :: T.Element -> T.Element -> String -> IORef (SimpleDiagram) -> IORef (QDiagram SVG V2 Double [PATH]) -> SimpleDiagram -> IORef (T2 Double)-> T.UI T.Element
+drawDiagramWithName codeArea diagWindow name syntaxTreeRef diagramRef newTree ptTransformRef = do
+  let newDiagram                       = (interpSD newTree) # withEnvelope (square 4 :: Diagram B)
+  let (newPtTransformer, newSvgString) = renderedString' newDiagram
+
+  liftIO $ writeIORef diagramRef newDiagram
+  liftIO $ writeIORef syntaxTreeRef newTree
+
+  T.element codeArea T.# T.set T.value (pprintTree newTree)
+  diagHtmlDiv3 <- UI.div T.#. name # T.set T.html (parseSVG newSvgString)
+
+  liftIO $ writeIORef ptTransformRef (inv newPtTransformer)
+  T.element diagWindow T.# T.set T.children [diagHtmlDiv3]
+
+
+makeIORefs :: T2 Double -> QDiagram SVG V2 Double [PATH] -> SimpleDiagram -> Bool -> (Double, Double) -> [PATH]
+               -> T.UI (IORef (T2 Double), IORef (QDiagram SVG V2 Double [PATH]), IORef (SimpleDiagram), IORef (Bool), IORef ((Double, Double)), IORef [PATH])
+makeIORefs trans fstDia sd bool coord lpths = do
+  ptTransformRef         <- liftIO $ (newIORef (inv trans))
+  diagramRef             <- liftIO $ (newIORef  fstDia)
+  syntaxTreeRef          <- liftIO $ (newIORef sd)
+  dragDetected           <- liftIO $ (newIORef bool )
+  lastMousePos           <- liftIO $ (newIORef coord)
+  paths                  <- liftIO $ (newIORef lpths)
+  return (ptTransformRef, diagramRef, syntaxTreeRef, dragDetected, lastMousePos, paths)
+
+readFromIORefs :: IORef (T2 Double) -> IORef (QDiagram SVG V2 Double [PATH]) -> IORef SimpleDiagram -> IORef Bool -> IORef (Double, Double) -> IORef [PATH]
+          -> T.UI (T2 Double, QDiagram SVG V2 Double [PATH], SimpleDiagram, Bool, (Double, Double), [PATH])
+readFromIORefs ptTransformRef diagramRef syntaxTreeRef dragDetected lastMousePos paths = do
+  ptTransformer                   <-  liftIO  $ readIORef ptTransformRef
+  diagramVar                      <-  liftIO  $ readIORef diagramRef
+  syntraxTreeVar                  <-  liftIO  $ readIORef syntaxTreeRef
+  (prevXpos, prevYpos)            <-  liftIO  $ readIORef lastMousePos
+  dragFlag                        <-  liftIO  $ readIORef dragDetected
+  newpath                         <-  liftIO  $ readIORef paths
+  return (ptTransformer, diagramVar, syntraxTreeVar, dragFlag, (prevXpos, prevYpos), newpath)
+
+
+pprintVec :: V2 Double -> String
+pprintVec (V2 d1 d2) = "(" ++ printf "%.3f" d1 ++ "," ++ printf "%.3f" d2 ++ ")"
+
+
+
+pprintTree :: SimpleDiagram -> String
+pprintTree SEmpty                      = "empty"
+pprintTree Circle                      = "circle"
+pprintTree Square                      = "square"
+pprintTree Triangle                    = "triangle"
+pprintTree (Polygon n)                 = "polygon " ++ show n
+pprintTree (Scale d sd)                = "scale " ++ printf "%.3f" d ++ " (" ++ (pprintTree sd) ++ ")"
+pprintTree (Translate v@(V2 d1 d2) sd) = "translate " ++ pprintVec v ++ " (" ++ (pprintTree sd) ++ ")"
+pprintTree (Atop sd1 sd2)              = "atop" ++ " (" ++ (pprintTree sd1) ++ ") " ++ " (" ++ (pprintTree sd2) ++ ")"
+
+createNewCircle :: P2 Double -> SimpleDiagram
+createNewCircle p = Translate (p .-. origin) Circle
