@@ -182,8 +182,8 @@ main :: IO ()
 main = do
   T.startGUI T.defaultConfig setup
 
-zipEvents :: T.Event a -> T.Event b -> T.Event (a, b)
-zipEvents e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing) (Nothing, Just pth) -> (Just p, Just pth)) (fmap (\p -> (Just p, Nothing)) e1)
+zipE :: T.Event a -> T.Event b -> T.Event (a, b)
+zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing) (Nothing, Just pth) -> (Just p, Just pth)) (fmap (\p -> (Just p, Nothing)) e1)
                                                        (fmap (\pth -> (Nothing, Just pth)) e2))
 
 setup :: T.Window -> T.UI ()
@@ -194,58 +194,52 @@ setup window = void $ mdo
   T.getBody window T.#+ [UI.grid [[UI.row [T.element diagWindow, T.element debuggArea], UI.row [T.element codeArea]]]]
 
   let
-      codeAreaEvent           = UI.valueChange codeArea
-      mouseUpEvent            = UI.mouseup diagWindow
-      mousedownEvent          = UI.mousedown diagWindow
+      codeAreaE           = UI.valueChange codeArea
+      mouseUpE            = UI.mouseup diagWindow
+      mousedownE          = UI.mousedown diagWindow
+      mousemoveE          = UI.mousemove diagWindow
+      mousedownTrE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> mousedownE)
+      pathE               = sample    <$> q2DiagramB           T.<@> mousedownTrE
 
-      mousemoveEvent          = UI.mousemove diagWindow
-      mousedownTransformEvent = transform <$> (inv <$> bTransfrom) T.<@> (makePoint <$> mousedownEvent)
-      pathEvent               = sample    <$> bQ2Diagram           T.<@> mousedownTransformEvent
+      (pointPathTupleE :: T.Event (P2 Double, [PATH]))                = zipE mousedownTrE pathE
+      mouseOutTupleE                                                  = T.filterE (\(p, path) -> path == []) pointPathTupleE
+      (ismousedownE :: T.Event Bool)                                  = (/= []) <$> pathE
+      (ismouseUpE   :: T.Event Bool)                                  = False <$ mouseUpE
+      (ismouseDragE :: T.Event Bool)                                  = T.unionWith (&&) ismousedownE ismouseUpE
+      (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
 
-      (pointPathTupleEvent :: T.Event (P2 Double, [PATH])) = zipEvents mousedownTransformEvent pathEvent
-
-      mouseOutEventTuple = T.filterE (\(p, path) -> path == []) pointPathTupleEvent
-
-      (ismouseDownEvent :: T.Event Bool)      = (/= []) <$> pathEvent
-      (ismouseUpEvent   :: T.Event Bool)      = False <$ mouseUpEvent
-
-      (ismouseDragEvent :: T.Event Bool)      = T.unionWith (&&) ismouseDownEvent ismouseUpEvent
-      (pointMoveBoolEvent :: T.Event (P2 Double, Bool)) = zipEvents (makePoint <$> mousemoveEvent) ismouseDragEvent
-
-  ismouseDragBehavior                      <- T.stepper False ismouseDragEvent
-  pathBehavior                             <- T.stepper [] pathEvent
+  ismouseDragB                                   <- T.stepper False ismouseDragE
+  pathB                                          <- T.stepper [] pathE
 
 
   let
-      draggingEvent = T.whenE ismouseDragBehavior mousemoveEvent
-      mvPointsEvent = transform <$> (inv <$> bTransfrom) T.<@> (makePoint <$> draggingEvent)
-      unionEventMvDown = T.unionWith const mousedownTransformEvent mvPointsEvent
+      draggingE        = T.whenE ismouseDragB mousemoveE
+      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE)
+      unionEventMvDown = T.unionWith const mousedownTrE mvPointsE
+      mouseOutE        = fst <$> mouseOutTupleE
 
-      mouseOutEvent = fst <$> mouseOutEventTuple
-
-  bPrevMousePt <- T.stepper origin unionEventMvDown
-
-  let
-      (translations       :: T.Event (V2 Double))                      = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsEvent
-      (formedSDdataEvent  :: T.Event SDdata)                           = mergeEvents codeAreaEvent translations mouseOutEvent pathBehavior
-      (simpleDiagramEvent :: T.Event (SimpleDiagram -> SimpleDiagram)) = T.filterJust (runSDdata <$> formedSDdataEvent)
-
-  -- (sdDataBehavior         :: T.Behavior SDdata)                        <- T.stepper (FrmCode "") formedSDdataEvent
-  (simpleDiagramBehavior  :: T.Behavior SimpleDiagram)                 <- T.accumB SEmpty simpleDiagramEvent
+  bPrevMousePt                                     <- T.stepper origin unionEventMvDown
 
   let
-      bdTuple       = makeDToDraw <$> simpleDiagramBehavior
-      bdiagramStr   = fmap (\(x, y, z) -> x) bdTuple
-      bTransfrom    = fmap (\(x, y, z) -> y) bdTuple
-      bQ2Diagram    = fmap (\(x, y, z) -> z) bdTuple
-      bdebuggStr    = (show <$> pathBehavior)
-      bcodeAreaStr  = (pprintTree <$> simpleDiagramBehavior)
+      (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE
+      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE pathB
+      (simpleDiagramE :: T.Event (SimpleDiagram -> SimpleDiagram))    = T.filterJust (runSDdata <$> formedSDdataE)
+
+  (simpleDiagramB  :: T.Behavior SimpleDiagram)     <- T.accumB SEmpty simpleDiagramE
+
+  let
+      dTupleB       = makeDToDraw <$> simpleDiagramB
+      diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
+      transformB    = fmap (\(x, y, z) -> y) dTupleB
+      q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
+      debuggStrB    = (show <$> pathB)
+      codeAreaStrB  = (pprintTree <$> simpleDiagramB)
 
 
   -- Sink
-  T.element debuggArea # T.sink UI.text bdebuggStr
-  T.element diagWindow # T.sink UI.html bdiagramStr
-  T.element codeArea # T.sink UI.value bcodeAreaStr
+  T.element debuggArea # T.sink UI.text debuggStrB
+  T.element diagWindow # T.sink UI.html diagramStrB
+  T.element codeArea   # T.sink UI.value codeAreaStrB
 
   return ()
 
@@ -302,3 +296,8 @@ createNewCircle p = Translate (p .-. origin) Circle
 
 makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double [PATH]))
 makeDToDraw sd = let code = interpSD sd # withEnvelope (square 4 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
+
+
+-- centerDiff :: P2 Double  -> SimpleDiagram -> Double
+-- centerDiff pt SEmpty = 0.0
+-- centerDiff
