@@ -173,6 +173,7 @@ data SDdata where
   FrmCode   :: String -> SDdata
   DragCoord :: V2 Double -> [PATH] -> SDdata
   Click     :: P2 Double -> SDdata
+  SCale     :: Double    -> [PATH] -> SDdata
   deriving (Show)
 
 
@@ -215,15 +216,19 @@ setup window = void $ mdo
 
       -- helper events for what it means to be dragging
       ismousedownE                                                  = True <$ dragE
+      ismouseSCdownE                                                = True <$ scaleE
       -- (ismousedownE :: T.Event Bool)                                  = (/= []) <$> pathE
       (ismouseUpE   :: T.Event Bool)                                  = False <$ mouseUpE
       (ismouseDragE :: T.Event Bool)                                  = T.unionWith (&&) ismousedownE ismouseUpE
+      (ismouseDragSCE :: T.Event Bool)                                = T.unionWith (&&) ismouseSCdownE ismouseUpE
 
       -- again to avoid lagging, put point and drag flag associated with it into one event
 
       (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
+      (pointMoveSCBoolE :: T.Event (P2 Double, Bool))                 = zipE (makePoint <$> mousemoveE) ismouseDragSCE
 
   ismouseDragB                                   <- T.stepper False ismouseDragE
+  ismouseDragSCB                                 <- T.stepper False ismouseDragSCE
   pathB                                          <- T.stepper [] pathE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
   -- scaleB                                         <- T.stepper False (True <$ scaleE)
@@ -234,27 +239,32 @@ setup window = void $ mdo
    -- untransformed and transformed dragging events
 
       draggingE        = T.whenE ismouseDragB mousemoveE
-      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE) -- possible split into 2 events
+      draggingSCE      = T.whenE ismouseDragSCB mousemoveE
+      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE) -- maybe split into 2 events?
+      mvPointsSCE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingSCE)
 
 
 
 
     -- merge mousedown event with drag event to avoid jumping when dragging resumes
+      unionEventMvDown = T.unionWith const (fst <$> dragE) mvPointsE
+      unionEventScDown = T.unionWith const (fst <$> scaleE) mvPointsSCE
 
-      unionEventMvDown = T.unionWith const mousedownTrE mvPointsE
       mouseOutE        = fst <$> mouseOutTupleE
 
   bPrevMousePt                                     <- T.stepper origin unionEventMvDown
-
+  bprevMouseScalept                                <- T.stepper origin unionEventScDown
   let
 
   -- simulate dragging
       (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE  -- to modify to incorporate rescaling
+      (scales             :: T.Event Double )                         = undefined--fmap (\prev cur -> (norm $  cur .-. origin) - (norm $ prev .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
 
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
 
-      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE pathB
+      -- (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE pathB
+      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE scales pathB
       (simpleDiagramE :: T.Event (SimpleDiagram -> SimpleDiagram))    = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB  :: T.Behavior SimpleDiagram)     <- T.accumB SEmpty simpleDiagramE
@@ -291,10 +301,14 @@ runSDdata (FrmCode str) = case myparse parseAtom str of
   Left  _  -> Nothing
 runSDdata (DragCoord cd pths) = Just $ \sd -> foldr (\pth -> refactorTree  pth cd) sd pths
 runSDdata (Click pt) = Just $ \sd -> Atop (createNewCircle pt) sd
+runSDdata (SCale d pths) = Just $ \sd -> foldr (\pth -> reScale d pth) sd pths
 
 
-mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Behavior [PATH] -> T.Event SDdata
-mergeEvents e1 e2 e3 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3]
+-- mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Behavior [PATH] -> T.Event SDdata
+-- mergeEvents e1 e2 e3 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3]
+
+mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Event Double -> T.Behavior [PATH] -> T.Event SDdata
+mergeEvents e1 e2 e3 e4 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3, flip SCale <$> bpths T.<@> e4]
 
 makePoint :: (Int, Int) -> P2 Double
 makePoint (x, y) = p2 (fromIntegral x, fromIntegral y)
@@ -349,17 +363,17 @@ isDragBounded :: P2 Double -> P2 Double -> PATH -> SimpleDiagram -> Bool
 isDragBounded pt cntr pths sd = centerDiff pt cntr pths sd <= 0.7
 
 
-reScale :: SimpleDiagram -> Double -> PATH -> SimpleDiagram
-reScale SEmpty d pth        = SEmpty
-reScale Circle d pth        = Scale d Circle
-reScale t@(Translate v sd) d pth   = Translate v (reScale sd d pth)
-reScale (Scale d1 sd) d2 pth       = Scale d1 (reScale sd d2 pth)
-reScale sd@(Atop sd1 sd2) d pth    = case pth of
+reScale :: Double -> PATH -> SimpleDiagram -> SimpleDiagram
+reScale  d pth  SEmpty      = SEmpty
+reScale  d pth  Circle      = Scale d Circle
+reScale  d pth t@(Translate v sd)  = Translate v (reScale  d pth sd)
+reScale  d2 pth (Scale d1 sd)      = Scale d1 (reScale d2 pth sd )
+reScale  d pth  sd@(Atop sd1 sd2)  = case pth of
   (x:xs) -> case x of
-    LEFT  -> Atop (reScale sd1 d pth) sd2
-    RIGHT -> Atop sd1 (reScale sd2 d pth)
+    LEFT  -> Atop (reScale  d pth sd1) sd2
+    RIGHT -> Atop sd1 (reScale  d pth sd2)
   otherwise -> sd
-reScale _            d tph          = undefined
+reScale d tph _         = undefined
 
 
 {- Function to allow me to split mousedown
