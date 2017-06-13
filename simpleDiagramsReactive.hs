@@ -258,7 +258,7 @@ setup window = void $ mdo
 
   -- simulate dragging
       (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE  -- to modify to incorporate rescaling
-      (scales             :: T.Event Double )                         = undefined--fmap (\prev cur -> (norm $  cur .-. origin) - (norm $ prev .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
+      (scales             :: T.Event Double )                         = undefined -- flip const <$>  bprevMouseScalept T.<@> (fmap (\p -> norm $ p .-. origin) mvPointsSCE)
 
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
