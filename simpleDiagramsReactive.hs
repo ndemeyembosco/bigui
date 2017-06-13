@@ -204,20 +204,29 @@ setup window = void $ mdo
 
       -- to avoid lagging zip the point and path obtained from it into one event
       (pointPathTupleE :: T.Event (P2 Double, [PATH]))                = zipE mousedownTrE pathE
-      mouseOutTupleE                                                  = T.filterE (\(p, path) -> path == []) pointPathTupleE
+
+
+
+      mouseOutTupleE                                                  = T.filterE (\(p, path) -> path == []) pointPathTupleE --dragE
+      mouseInTupleE                                                = T.filterE (\(p, path) -> path /= []) pointPathTupleE
+
+      -- split these mousedown events into drag vs scale events
+      (dragE, scaleE) = splitEScaleDrag simpleDiagramB mouseInTupleE
 
       -- helper events for what it means to be dragging
-      (ismousedownE :: T.Event Bool)                                  = (/= []) <$> pathE
+      ismousedownE                                                  = True <$ dragE
+      -- (ismousedownE :: T.Event Bool)                                  = (/= []) <$> pathE
       (ismouseUpE   :: T.Event Bool)                                  = False <$ mouseUpE
       (ismouseDragE :: T.Event Bool)                                  = T.unionWith (&&) ismousedownE ismouseUpE
 
-      -- again to avoid lag point and drag flag associated with it into one event
+      -- again to avoid lagging, put point and drag flag associated with it into one event
 
       (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
 
   ismouseDragB                                   <- T.stepper False ismouseDragE
   pathB                                          <- T.stepper [] pathE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
+  -- scaleB                                         <- T.stepper False (True <$ scaleE)
 
 
   let
@@ -225,7 +234,10 @@ setup window = void $ mdo
    -- untransformed and transformed dragging events
 
       draggingE        = T.whenE ismouseDragB mousemoveE
-      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE)
+      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE) -- possible split into 2 events
+
+
+
 
     -- merge mousedown event with drag event to avoid jumping when dragging resumes
 
@@ -254,7 +266,7 @@ setup window = void $ mdo
       diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
       transformB    = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
-      debuggStrB    = (show <$> mousedownTrB)
+      debuggStrB    = (show <$> pathB)
       codeAreaStrB  = (pprintTree <$> simpleDiagramB)
 
 
@@ -337,16 +349,27 @@ isDragBounded :: P2 Double -> P2 Double -> PATH -> SimpleDiagram -> Bool
 isDragBounded pt cntr pths sd = centerDiff pt cntr pths sd <= 0.7
 
 
-reScale :: SimpleDiagram -> P2 Double -> P2 Double -> PATH -> SimpleDiagram
-reScale SEmpty _ _      pth                              = SEmpty
-reScale Circle prevP newP pth                            = Scale (norm $ newP .-. prevP) Circle
-reScale (Translate v@(V2 d1 d2) sd) prevP newP  pth      = Translate v (reScale sd prevP newP pth)
-reScale (Scale d sd)                prevP newP  pth      = Scale d (reScale sd prevP newP pth)
-reScale sd@(Atop sd1 sd2)           prevP newP  pth      = case pth of
-  (x:xs)  -> case x of
-    LEFT  -> Atop (reScale sd1 prevP newP xs) sd2
-    RIGHT -> Atop sd1 (reScale sd2 prevP newP xs)
+reScale :: SimpleDiagram -> Double -> PATH -> SimpleDiagram
+reScale SEmpty d pth        = SEmpty
+reScale Circle d pth        = Scale d Circle
+reScale t@(Translate v sd) d pth   = Translate v (reScale sd d pth)
+reScale (Scale d1 sd) d2 pth       = Scale d1 (reScale sd d2 pth)
+reScale sd@(Atop sd1 sd2) d pth    = case pth of
+  (x:xs) -> case x of
+    LEFT  -> Atop (reScale sd1 d pth) sd2
+    RIGHT -> Atop sd1 (reScale sd2 d pth)
   otherwise -> sd
+reScale _            d tph          = undefined
+
+
+{- Function to allow me to split mousedown
+events into dragging events or scaling events, also showcases use of
+isDragBounded as well as centerDiff -}
+
+splitEScaleDrag :: T.Behavior SimpleDiagram -> T.Event (P2 Double, [PATH]) -> (T.Event (P2 Double, [PATH]), T.Event (P2 Double, [PATH]))
+splitEScaleDrag sdB ptpthsE = T.split $ fmap (\(sd, (pt, pths)) -> if isDragBounded pt origin (head pths) sd then Left (pt, pths) else Right (pt, pths)) ((,) <$> sdB T.<@> ptpthsE)
+
+
 
 
 -------------------------------------------------------------------------------------------------------------------
