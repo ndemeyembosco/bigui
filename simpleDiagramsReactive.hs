@@ -258,7 +258,8 @@ setup window = void $ mdo
 
   -- simulate dragging
       (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE  -- to modify to incorporate rescaling
-      (scales             :: T.Event Double )                         = undefined -- flip const <$>  bprevMouseScalept T.<@> (fmap (\p -> norm $ p .-. origin) mvPointsSCE)
+      -- origin is definitely not the right thing to use, but how do you get center of circle
+      (scales             :: T.Event Double )                         = fmap (\origPt curPt -> norm (curPt .-. origin) / norm (origPt .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
 
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
@@ -367,7 +368,7 @@ reScale :: Double -> PATH -> SimpleDiagram -> SimpleDiagram
 reScale  d pth  SEmpty      = SEmpty
 reScale  d pth  Circle      = Scale d Circle
 reScale  d pth t@(Translate v sd)  = Translate v (reScale  d pth sd)
-reScale  d2 pth (Scale d1 sd)      = Scale d1 (reScale d2 pth sd )
+reScale  d2 pth (Scale d1 sd)      = Scale (d2*d1) sd
 reScale  d pth  sd@(Atop sd1 sd2)  = case pth of
   (x:xs) -> case x of
     LEFT  -> Atop (reScale  d pth sd1) sd2
