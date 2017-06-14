@@ -17,15 +17,12 @@ import Data.Zip as Z
 import Graphics.Svg.Core
 import qualified Graphics.UI.Threepenny as UI
 import qualified Graphics.UI.Threepenny.Core as T
--- import qualified Diagrams.TwoD.Apollonian as DA (center, radius)
 
 import Data.Functor
 import Data.List
 import qualified Data.Text.Internal as LT
 import qualified Data.Text.Internal.Lazy as LTZ
 import qualified Data.Text.Lazy as DT
-
--- import
 import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Diagrams.Backend.SVG.CmdLine
@@ -170,7 +167,7 @@ isCompileReady s = case evalExpr' s of
 
 
 data SDdata where
-  FrmCode   :: String -> SDdata
+  FrmCode   :: String   -> SDdata
   DragCoord :: V2 Double -> [PATH] -> SDdata
   Click     :: P2 Double -> SDdata
   SCale     :: Double    -> [PATH] -> SDdata
@@ -246,9 +243,9 @@ setup window = void $ mdo
   let
 
   -- simulate dragging
-      (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE  
+      (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE
       -- origin is definitely not the right thing to use, but how do you get center of circle
-      (scales             :: T.Event Double )                         = fmap (\origPt curPt -> norm (curPt .-. origin) / norm (origPt .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
+      (scales             :: T.Event Double )                         = scaleBy <$> (head <$> pathB) <*>  simpleDiagramB <*> bprevMouseScalept T.<@> mvPointsSCE --fmap (\origPt curPt -> norm (curPt .-. origin) / norm (origPt .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
 
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
@@ -257,7 +254,7 @@ setup window = void $ mdo
       (simpleDiagramE :: T.Event (SimpleDiagram -> SimpleDiagram))    = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB  :: T.Behavior SimpleDiagram)     <- T.accumB SEmpty simpleDiagramE
-  testScalesB                                        <- T.stepper 0.0 scales
+  testScalesB                                       <- T.stepper 0.0 scales
 
   let
   -- render diagram
@@ -265,7 +262,7 @@ setup window = void $ mdo
       diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
       transformB    = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
-      debuggStrB    = (show <$> testScalesB)
+      debuggStrB    = (show <$> pathB)
       codeAreaStrB  = (pprintTree <$> simpleDiagramB)
 
 
@@ -293,13 +290,14 @@ runSDdata (FrmCode str) = case myparse parseAtom str of
   Left  _  -> Nothing
 runSDdata (DragCoord cd pths) = Just $ \sd -> foldr (\pth -> refactorTree  pth cd) sd pths
 runSDdata (Click pt) = Just $ \sd -> Atop (createNewCircle pt) sd
-runSDdata (SCale d pths) = Just $ \sd -> foldr (\pth -> reScale d pth) sd pths
+runSDdata (SCale d pths) = Just $ \sd -> foldr (\pth -> reScale d pth) sd pths    -- problematic
 
 
 
 -- merge all different kinds of edits to the diagram into one data type.
 mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Event Double -> T.Behavior [PATH] -> T.Event SDdata
-mergeEvents e1 e2 e3 e4 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3, flip SCale <$> bpths T.<@> e4]
+mergeEvents e1 e2 e3 e4 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3
+                                   , flip SCale <$> bpths T.<@> e4]
 
 -- turn returned coordinate into point
 makePoint :: (Int, Int) -> P2 Double
@@ -349,22 +347,42 @@ pprintTree (Atop sd1 sd2)              = "atop" ++ " (" ++ (pprintTree sd1) ++ "
 
 -- calculate the distance between click point and center of diagram where you clicked
 
-centerDiff :: P2 Double  -> P2 Double -> PATH -> SimpleDiagram -> Double
-centerDiff pt cntr pths SEmpty                            = 0.0
-centerDiff pt cntr pths Circle                            = norm (pt .-. cntr)
-centerDiff pt cntr pths (Translate v@(V2 d1 d2) sd)       = centerDiff pt (p2 (d1, d2)) pths sd
-centerDiff pt cntr pths (Scale d sd)                      = (centerDiff pt cntr pths sd) / d -- keep it constrained in (0,1) range
-centerDiff pt cntr pths (Atop sd1 sd2)                    = case pths of
-    (x:xs)      -> case x of
-      LEFT      -> centerDiff pt cntr xs sd1
-      RIGHT     -> centerDiff pt cntr xs sd2
-centerDiff pt cntr pths _                                 = undefined
+-- centerDiff :: P2 Double  -> P2 Double -> PATH -> SimpleDiagram -> Double
+-- centerDiff pt cntr pths SEmpty                            = 0.0
+-- centerDiff pt cntr pths Circle                            = norm (pt .-. cntr)
+-- centerDiff pt cntr pths (Translate v@(V2 d1 d2) sd)       = centerDiff pt cntr pths sd--(p2 (d1, d2)) pths sd
+-- centerDiff pt cntr pths (Scale d sd)                      = (centerDiff pt cntr pths sd) / d -- keep it constrained in (0,1) range
+-- centerDiff pt cntr pths (Atop sd1 sd2)                    = case pths of
+--     (x:xs)      -> case x of
+--       LEFT      -> centerDiff pt cntr xs sd1
+--       RIGHT     -> centerDiff pt cntr xs sd2
+-- centerDiff pt cntr pths _                                 = undefined
+
+
+--- find center, radius and point --licked on
+
+findCenter :: PATH -> SimpleDiagram -> (P2 Double, Double)
+--findCenter _ SEmpty   = (makePoint (0, 0), 0)
+findCenter _ Circle   = (origin, 1.0)
+findCenter pth (Translate v sd) = let (cntr, r) = findCenter pth sd in (translate v cntr, r)
+findCenter pth (Scale d sd)     = let (cntr, r) = findCenter pth sd in (scale d cntr, r)
+findCenter pth (Atop sdl sdr)   = case pth of
+  (x:xs) -> case x of
+   LEFT      -> findCenter xs sdl
+   RIGHT     -> findCenter xs sdr
+  []    -> error "path outside"
+
+findScaleFactor :: P2 Double -> P2 Double -> P2 Double -> Double -> Double
+findScaleFactor prev cur cntr r = let d = r - (norm $ prev .-. cntr) in ((norm $ cur .-. cntr) + d) / r
+
+
+scaleBy :: PATH -> SimpleDiagram -> P2 Double -> P2 Double -> Double
+scaleBy pth sd p q = let (cntr, r) = findCenter pth sd in findScaleFactor p q cntr r
 
 
 -- flag to determine whether we should drag or scale
-
-isDragBounded :: P2 Double -> P2 Double -> PATH -> SimpleDiagram -> Bool
-isDragBounded pt cntr pths sd = centerDiff pt cntr pths sd <= 0.7
+isDragBounded :: P2 Double -> PATH -> SimpleDiagram -> Bool
+isDragBounded pt pths sd = let (c, r) = findCenter pths sd in r - (norm $ pt .-. c) >= 0.3    --centerDiff pt cntr pths sd <= 0.7
 
 
 
@@ -377,8 +395,8 @@ reScale  d pth t@(Translate v sd)  = Translate v (reScale  d pth sd)
 reScale  d2 pth (Scale d1 sd)      = Scale (d2*d1) sd
 reScale  d pth  sd@(Atop sd1 sd2)  = case pth of
   (x:xs) -> case x of
-    LEFT  -> Atop (reScale  d pth sd1) sd2
-    RIGHT -> Atop sd1 (reScale  d pth sd2)
+    LEFT  -> Atop (reScale  d xs sd1) sd2
+    RIGHT -> Atop sd1 (reScale  d xs sd2)
   otherwise -> sd
 reScale d tph _         = undefined
 
@@ -388,7 +406,7 @@ events into dragging events or scaling events, also showcases use of
 isDragBounded as well as centerDiff -}
 
 splitEScaleDrag :: T.Behavior SimpleDiagram -> T.Event (P2 Double, [PATH]) -> (T.Event (P2 Double, [PATH]), T.Event (P2 Double, [PATH]))
-splitEScaleDrag sdB ptpthsE = T.split $ fmap (\(sd, (pt, pths)) -> if isDragBounded pt origin (head pths) sd then Left (pt, pths) else Right (pt, pths)) ((,) <$> sdB T.<@> ptpthsE)
+splitEScaleDrag sdB ptpthsE = T.split $ fmap (\(sd, (pt, pths)) -> if isDragBounded pt (head pths) sd then Left (pt, pths) else Right (pt, pths)) ((,) <$> sdB T.<@> ptpthsE)
 
 
 
