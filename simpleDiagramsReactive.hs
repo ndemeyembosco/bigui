@@ -199,31 +199,25 @@ setup window = void $ mdo
       mousemoveE          = UI.mousemove diagWindow
 
       -- transform point into diagram coordinates and generate paths events from it
-
       mousedownTrE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> mousedownE)
       pathE               = sample    <$> q2DiagramB           T.<@> mousedownTrE
 
       -- to avoid lagging zip the point and path obtained from it into one event
       (pointPathTupleE :: T.Event (P2 Double, [PATH]))                = zipE mousedownTrE pathE
-
-
-
-      mouseOutTupleE                                                  = T.filterE (\(p, path) -> path == []) pointPathTupleE --dragE
-      mouseInTupleE                                                = T.filterE (\(p, path) -> path /= []) pointPathTupleE
+      mouseOutTupleE                                                  = T.filterE (\(p, path) -> path == []) pointPathTupleE
+      mouseInTupleE                                                   = T.filterE (\(p, path) -> path /= []) pointPathTupleE
 
       -- split these mousedown events into drag vs scale events
       (dragE, scaleE) = splitEScaleDrag simpleDiagramB mouseInTupleE
 
       -- helper events for what it means to be dragging
-      ismousedownE                                                  = True <$ dragE
-      ismouseSCdownE                                                = True <$ scaleE
-      -- (ismousedownE :: T.Event Bool)                                  = (/= []) <$> pathE
+      ismousedownE                                                    = True <$ dragE
+      ismouseSCdownE                                                  = True <$ scaleE
       (ismouseUpE   :: T.Event Bool)                                  = False <$ mouseUpE
       (ismouseDragE :: T.Event Bool)                                  = T.unionWith (&&) ismousedownE ismouseUpE
       (ismouseDragSCE :: T.Event Bool)                                = T.unionWith (&&) ismouseSCdownE ismouseUpE
 
       -- again to avoid lagging, put point and drag flag associated with it into one event
-
       (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
       (pointMoveSCBoolE :: T.Event (P2 Double, Bool))                 = zipE (makePoint <$> mousemoveE) ismouseDragSCE
 
@@ -231,58 +225,51 @@ setup window = void $ mdo
   ismouseDragSCB                                 <- T.stepper False ismouseDragSCE
   pathB                                          <- T.stepper [] pathE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
-  -- scaleB                                         <- T.stepper False (True <$ scaleE)
 
 
   let
-
-   -- untransformed and transformed dragging events
-
+   -- untransformed and transformed clicking, dragging and scaling events
+      mouseOutE        = fst <$> mouseOutTupleE
       draggingE        = T.whenE ismouseDragB mousemoveE
       draggingSCE      = T.whenE ismouseDragSCB mousemoveE
-      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE) -- maybe split into 2 events?
-      mvPointsSCE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingSCE)
-
-
+      mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE)
+      mvPointsSCE      = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingSCE)
 
 
     -- merge mousedown event with drag event to avoid jumping when dragging resumes
       unionEventMvDown = T.unionWith const (fst <$> dragE) mvPointsE
       unionEventScDown = T.unionWith const (fst <$> scaleE) mvPointsSCE
 
-      mouseOutE        = fst <$> mouseOutTupleE
 
   bPrevMousePt                                     <- T.stepper origin unionEventMvDown
   bprevMouseScalept                                <- T.stepper origin unionEventScDown
   let
 
   -- simulate dragging
-      (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE  -- to modify to incorporate rescaling
+      (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE  
       -- origin is definitely not the right thing to use, but how do you get center of circle
       (scales             :: T.Event Double )                         = fmap (\origPt curPt -> norm (curPt .-. origin) / norm (origPt .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
 
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
 
-      -- (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE pathB
       (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE scales pathB
       (simpleDiagramE :: T.Event (SimpleDiagram -> SimpleDiagram))    = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB  :: T.Behavior SimpleDiagram)     <- T.accumB SEmpty simpleDiagramE
+  testScalesB                                        <- T.stepper 0.0 scales
 
   let
   -- render diagram
-
       dTupleB       = makeDToDraw <$> simpleDiagramB
       diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
       transformB    = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
-      debuggStrB    = (show <$> pathB)
+      debuggStrB    = (show <$> testScalesB)
       codeAreaStrB  = (pprintTree <$> simpleDiagramB)
 
 
   -- Sink diagram behavior into appropriate gui elements
-
   T.element debuggArea # T.sink UI.text debuggStrB
   T.element diagWindow # T.sink UI.html diagramStrB
   T.element codeArea   # T.sink UI.value codeAreaStrB
@@ -292,10 +279,14 @@ setup window = void $ mdo
 -- helper functions
 
 
+
+-- merge two events that happen at the same time to avoid lagging.
 zipE :: T.Event a -> T.Event b -> T.Event (a, b)
 zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing) (Nothing, Just pth) -> (Just p, Just pth)) (fmap (\p -> (Just p, Nothing)) e1)
                                                        (fmap (\pth -> (Nothing, Just pth)) e2))
 
+
+-- handle different kinds of edits to the diagram
 runSDdata :: SDdata -> Maybe (SimpleDiagram -> SimpleDiagram)
 runSDdata (FrmCode str) = case myparse parseAtom str of
   Right sd -> Just $ const sd
@@ -305,15 +296,16 @@ runSDdata (Click pt) = Just $ \sd -> Atop (createNewCircle pt) sd
 runSDdata (SCale d pths) = Just $ \sd -> foldr (\pth -> reScale d pth) sd pths
 
 
--- mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Behavior [PATH] -> T.Event SDdata
--- mergeEvents e1 e2 e3 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3]
 
+-- merge all different kinds of edits to the diagram into one data type.
 mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Event Double -> T.Behavior [PATH] -> T.Event SDdata
 mergeEvents e1 e2 e3 e4 bpths = head <$> T.unions [(FrmCode <$> e1), (flip DragCoord <$> bpths T.<@> e2), Click <$> e3, flip SCale <$> bpths T.<@> e4]
 
+-- turn returned coordinate into point
 makePoint :: (Int, Int) -> P2 Double
 makePoint (x, y) = p2 (fromIntegral x, fromIntegral y)
 
+-- modify tree according to given vector and path while dragging
 refactorTree :: PATH -> V2 Double -> SimpleDiagram -> SimpleDiagram
 refactorTree  _ p Circle                      = Translate p Circle
 refactorTree  _ p Triangle                    = Translate p Triangle
@@ -332,6 +324,11 @@ refactorTree  pth p  d@(Atop sd1 sd2)         = case pth of
     RIGHT     -> Atop sd1 (refactorTree  xs p sd2)
 
 
+
+{- pretty print the updated syntax tree
+   in order to sink it in the textarea.
+ -}
+
 pprintVec :: V2 Double -> String
 pprintVec (V2 d1 d2) = "(" ++ printf "%.3f" d1 ++ "," ++ printf "%.3f" d2 ++ ")"
 
@@ -349,6 +346,9 @@ pprintTree (Atop sd1 sd2)              = "atop" ++ " (" ++ (pprintTree sd1) ++ "
 
 -------------------------------------------------- scaling    ---------------------------------------------------------
 
+
+-- calculate the distance between click point and center of diagram where you clicked
+
 centerDiff :: P2 Double  -> P2 Double -> PATH -> SimpleDiagram -> Double
 centerDiff pt cntr pths SEmpty                            = 0.0
 centerDiff pt cntr pths Circle                            = norm (pt .-. cntr)
@@ -360,9 +360,15 @@ centerDiff pt cntr pths (Atop sd1 sd2)                    = case pths of
       RIGHT     -> centerDiff pt cntr xs sd2
 centerDiff pt cntr pths _                                 = undefined
 
+
+-- flag to determine whether we should drag or scale
+
 isDragBounded :: P2 Double -> P2 Double -> PATH -> SimpleDiagram -> Bool
 isDragBounded pt cntr pths sd = centerDiff pt cntr pths sd <= 0.7
 
+
+
+-- modify tree according to scale factor while scaling
 
 reScale :: Double -> PATH -> SimpleDiagram -> SimpleDiagram
 reScale  d pth  SEmpty      = SEmpty
@@ -389,8 +395,10 @@ splitEScaleDrag sdB ptpthsE = T.split $ fmap (\(sd, (pt, pths)) -> if isDragBoun
 
 -------------------------------------------------------------------------------------------------------------------
 
+-- creating and new circle, to be used on click outside of diagram.
 createNewCircle :: P2 Double -> SimpleDiagram
 createNewCircle p = Translate (p .-. origin) Circle
 
+-- render syntax tree
 makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double [PATH]))
 makeDToDraw sd = let code = interpSD sd # withEnvelope (square 4 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
