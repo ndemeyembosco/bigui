@@ -263,7 +263,7 @@ setup window = void $ mdo
       transformB    = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
       debuggStrB    = (show <$> pathB)
-      codeAreaStrB  = (pprintTree <$> simpleDiagramB)
+      codeAreaStrB  = (pprintTree 4 <$> simpleDiagramB)
 
 
   -- Sink diagram behavior into appropriate gui elements
@@ -330,39 +330,28 @@ refactorTree  pth p  d@(Atop sd1 sd2)         = case pth of
 pprintVec :: V2 Double -> String
 pprintVec (V2 d1 d2) = "(" ++ printf "%.3f" d1 ++ "," ++ printf "%.3f" d2 ++ ")"
 
-pprintTree :: SimpleDiagram -> String
-pprintTree SEmpty                      = ""
-pprintTree Circle                      = "circle"
-pprintTree Square                      = "square"
-pprintTree Triangle                    = "triangle"
-pprintTree (Polygon n)                 = "polygon " ++ show n
-pprintTree (Scale d sd)                = "scale " ++ printf "%.3f" d ++ " (" ++ (pprintTree sd) ++ ")"
-pprintTree (Translate v@(V2 d1 d2) sd) = "translate " ++ pprintVec v ++ " (" ++ (pprintTree sd) ++ ")"
-pprintTree (Atop sd1 sd2)              = "atop" ++ " (" ++ (pprintTree sd1) ++ ") " ++ " (" ++ (pprintTree sd2) ++ ")"
+pprintTree :: Int -> SimpleDiagram -> String
+pprintTree ind SEmpty                      = ""
+pprintTree ind Circle                      = "circle"
+pprintTree ind Square                      = "square"
+pprintTree ind Triangle                    = "triangle"
+pprintTree ind (Polygon n)                 = "polygon " ++ show n
+pprintTree ind (Scale d sd)                = "scale \n" ++ (replicateSp (ind + 2)) ++ printf "%.3f" d ++ "\n" ++ (replicateSp (ind + 2)) ++ "(" ++ (pprintTree (ind+5) sd) ++ ")"
+pprintTree ind (Translate v@(V2 d1 d2) sd) = "translate \n" ++ (replicateSp (ind + 2)) ++ pprintVec v ++ "\n" ++ (replicateSp (ind + 2)) ++ "(" ++ (pprintTree (ind+5) sd) ++ ")"
+pprintTree ind (Atop sd1 sd2)              = "atop \n" ++ (replicateSp ind) ++ "(" ++  (pprintTree (5+ind) sd1) ++ ") \n" ++ (replicateSp ind) ++ "(" ++  (pprintTree (5+ind) sd2) ++ ")"
+
+
+
+
+replicateSp :: Int -> String
+replicateSp n = foldr (++) [] (replicate n " ")
 
 
 
 -------------------------------------------------- scaling    ---------------------------------------------------------
-
-
--- calculate the distance between click point and center of diagram where you clicked
-
--- centerDiff :: P2 Double  -> P2 Double -> PATH -> SimpleDiagram -> Double
--- centerDiff pt cntr pths SEmpty                            = 0.0
--- centerDiff pt cntr pths Circle                            = norm (pt .-. cntr)
--- centerDiff pt cntr pths (Translate v@(V2 d1 d2) sd)       = centerDiff pt cntr pths sd--(p2 (d1, d2)) pths sd
--- centerDiff pt cntr pths (Scale d sd)                      = (centerDiff pt cntr pths sd) / d -- keep it constrained in (0,1) range
--- centerDiff pt cntr pths (Atop sd1 sd2)                    = case pths of
---     (x:xs)      -> case x of
---       LEFT      -> centerDiff pt cntr xs sd1
---       RIGHT     -> centerDiff pt cntr xs sd2
--- centerDiff pt cntr pths _                                 = undefined
-
-
 --- find center, radius and point --licked on
 
 findCenter :: PATH -> SimpleDiagram -> (P2 Double, Double)
---findCenter _ SEmpty   = (makePoint (0, 0), 0)
 findCenter _ Circle   = (origin, 1.0)
 findCenter pth (Translate v sd) = let (cntr, r) = findCenter pth sd in (translate v cntr, r)
 findCenter pth (Scale d sd)     = let (cntr, r) = findCenter pth sd in (scale d cntr, r)
@@ -371,6 +360,7 @@ findCenter pth (Atop sdl sdr)   = case pth of
    LEFT      -> findCenter xs sdl
    RIGHT     -> findCenter xs sdr
   []    -> error "path outside"
+findCenter pth _                = (origin, 1.0)
 
 findScaleFactor :: P2 Double -> P2 Double -> P2 Double -> Double -> Double
 findScaleFactor prev cur cntr r = let d = r - (norm $ prev .-. cntr) in ((norm $ cur .-. cntr) + d) / r
