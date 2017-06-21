@@ -9,7 +9,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module SDZipper
+module SDzipper
     (SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
     upmostZ, editZ, unZipSD, unZipWith) where
 
@@ -85,15 +85,22 @@ upZ (sd, AtopRCtx sd1 ctx) = (Atop sd1 sd, ctx)
 topZ :: SimpleDiagram -> SDzipper     -- a.k.a makeZipper
 topZ sd = (sd, Top)
 
-leftZ :: SDzipper -> SDzipper
-leftZ loc = case loc of
-        (Atop l r, ctx) -> (l, AtopLCtx ctx r)
-        otherwise       -> loc
 
 rightZ :: SDzipper -> SDzipper
-rightZ loc = case loc of
-        (Atop l r, ctx) -> (r, AtopRCtx l ctx)
-        otherwise       -> loc
+rightZ (sd, AtopLCtx ctx sd1) =  (sd1, AtopRCtx sd ctx)
+rightZ loc                    = loc
+
+
+leftZ :: SDzipper -> SDzipper
+leftZ (sd, AtopRCtx sd1 ctx) = (sd1, AtopLCtx ctx sd)
+leftZ loc                    = loc
+
+
+downZ :: SDzipper -> SDzipper
+downZ (Atop l r, ctx)        = (l, AtopLCtx ctx r)   -- by default go left first.
+downZ (Scale d sd, ctx)      = (sd, ScaleCtx d ctx)
+downZ (Translate v sd, ctx)  = (sd, TransCtx v ctx)
+downZ loc                    = loc
 
 
 upmostZ :: SDzipper -> SDzipper
