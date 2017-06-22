@@ -1,0 +1,24 @@
+Configuring snap-core-1.0.2.1...
+Building snap-core-1.0.2.1...
+Preprocessing library snap-core-1.0.2.1...
+[ 1 of 18] Compiling Snap.Types.Headers ( src/Snap/Types/Headers.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Types/Headers.o )
+[ 2 of 18] Compiling Snap.Internal.Http.Types ( src/Snap/Internal/Http/Types.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Http/Types.o )
+[ 3 of 18] Compiling Snap.Internal.Parsing ( src/Snap/Internal/Parsing.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Parsing.o )
+[ 4 of 18] Compiling Snap.Internal.Test.Assertions ( src/Snap/Internal/Test/Assertions.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Test/Assertions.o )
+[ 5 of 18] Compiling Snap.Internal.Debug ( src/Snap/Internal/Debug.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Debug.o )
+[ 6 of 18] Compiling Snap.Internal.Core ( src/Snap/Internal/Core.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Core.o )
+[ 7 of 18] Compiling Snap.Internal.Instances ( src/Snap/Internal/Instances.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Instances.o )
+[ 8 of 18] Compiling Snap.Internal.Routing ( src/Snap/Internal/Routing.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Routing.o )
+[ 9 of 18] Compiling Snap.Core        ( src/Snap/Core.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Core.o )
+[10 of 18] Compiling Snap.Internal.Test.RequestBuilder ( src/Snap/Internal/Test/RequestBuilder.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Test/RequestBuilder.o )
+[11 of 18] Compiling Snap.Test        ( src/Snap/Test.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Test.o )
+[12 of 18] Compiling Snap.Internal.Util.FileServe ( src/Snap/Internal/Util/FileServe.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Util/FileServe.o )
+[13 of 18] Compiling Snap.Util.FileServe ( src/Snap/Util/FileServe.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Util/FileServe.o )
+[14 of 18] Compiling Snap.Internal.Util.FileUploads ( src/Snap/Internal/Util/FileUploads.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Internal/Util/FileUploads.o )
+[15 of 18] Compiling Snap.Util.FileUploads ( src/Snap/Util/FileUploads.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Util/FileUploads.o )
+[16 of 18] Compiling Snap.Util.CORS   ( src/Snap/Util/CORS.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Util/CORS.o )
+[17 of 18] Compiling Snap.Util.GZip   ( src/Snap/Util/GZip.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Util/GZip.o )
+[18 of 18] Compiling Snap.Util.Proxy  ( src/Snap/Util/Proxy.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Snap/Util/Proxy.o )
+Installing library in
+/Users/boscondemeye/.stack/snapshots/x86_64-osx/lts-8.19/8.0.2/lib/x86_64-osx-ghc-8.0.2/snap-core-1.0.2.1-7zNL9o6kjex9maTjlcm5hb
+Registering snap-core-1.0.2.1...

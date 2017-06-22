@@ -1,0 +1,20 @@
+Configuring diagrams-core-1.4...
+Building diagrams-core-1.4...
+Preprocessing library diagrams-core-1.4...
+[ 1 of 14] Compiling Diagrams.Core.V  ( src/Diagrams/Core/V.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/V.o )
+[ 2 of 14] Compiling Diagrams.Core.Points ( src/Diagrams/Core/Points.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Points.o )
+[ 3 of 14] Compiling Diagrams.Core.Measure ( src/Diagrams/Core/Measure.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Measure.o )
+[ 4 of 14] Compiling Diagrams.Core.HasOrigin ( src/Diagrams/Core/HasOrigin.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/HasOrigin.o )
+[ 5 of 14] Compiling Diagrams.Core.Transform ( src/Diagrams/Core/Transform.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Transform.o )
+[ 6 of 14] Compiling Diagrams.Core.Names ( src/Diagrams/Core/Names.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Names.o )
+[ 7 of 14] Compiling Diagrams.Core.Query ( src/Diagrams/Core/Query.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Query.o )
+[ 8 of 14] Compiling Diagrams.Core.Style ( src/Diagrams/Core/Style.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Style.o )
+[ 9 of 14] Compiling Diagrams.Core.Trace ( src/Diagrams/Core/Trace.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Trace.o )
+[10 of 14] Compiling Diagrams.Core.Envelope ( src/Diagrams/Core/Envelope.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Envelope.o )
+[11 of 14] Compiling Diagrams.Core.Juxtapose ( src/Diagrams/Core/Juxtapose.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Juxtapose.o )
+[12 of 14] Compiling Diagrams.Core.Types ( src/Diagrams/Core/Types.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Types.o )
+[13 of 14] Compiling Diagrams.Core.Compile ( src/Diagrams/Core/Compile.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core/Compile.o )
+[14 of 14] Compiling Diagrams.Core    ( src/Diagrams/Core.hs, .stack-work/dist/x86_64-osx/Cabal-1.24.2.0/build/Diagrams/Core.o )
+Installing library in
+/Users/boscondemeye/.stack/snapshots/x86_64-osx/lts-8.19/8.0.2/lib/x86_64-osx-ghc-8.0.2/diagrams-core-1.4-DM5OHDuDYPV8563IFAsnd0
+Registering diagrams-core-1.4...
