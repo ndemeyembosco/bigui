@@ -1,7 +1,7 @@
 module MyParser
   ( -- * Lexing
    myparse, myparens, myreserved, myreservedOp,
-   mysymbol, ident, mydouble, myinteger, mywhiteSpace
+   mysymbol, ident, mydouble, myinteger, mywhiteSpace, mybrackets
 
   )
   where
@@ -28,6 +28,9 @@ lexer = makeTokenParser $
 
 myparens :: Parser a -> Parser a
 myparens = parens lexer
+
+mybrackets :: Parser a -> Parser a
+mybrackets = brackets lexer
 
 myreserved, myreservedOp :: String -> Parser ()
 myreserved   = reserved lexer

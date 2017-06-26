@@ -43,6 +43,7 @@ import           Data.IORef
 import           Control.Monad.IO.Class
 import           SDzipper
 import           MyParser
+import           KeyCode
 
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
@@ -77,6 +78,9 @@ renderedString' myDiag = case diagTuple' myDiag of
 parseCoord :: Parser (V2 Double)
 parseCoord = r2 <$> ((,) <$> (mysymbol "(" *> mydouble <* mysymbol ",") <*> (mydouble <* mysymbol ")"))
 
+parseCursor :: Parser SimpleDiagram
+parseCursor = Cursor <$> mybrackets parseAtom
+
 parseAtom :: Parser SimpleDiagram
 parseAtom = Circle <$ myreserved "circle"
     <|> Triangle  <$ myreserved "triangle"
@@ -86,6 +90,7 @@ parseAtom = Circle <$ myreserved "circle"
     <|> Translate <$> (myreserved "translate" *> parseCoord) <*> parseAtom
     <|> Atop <$> (myreserved "atop" *> parseAtom) <*> parseAtom
     <|> myparens parseAtom
+    <|> parseCursor
 
 
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double [Bool])
@@ -105,6 +110,7 @@ data SDdata where
   DragCoord :: V2 Double -> SDdata
   Click     :: P2 Double -> SDdata
   -- SCale     :: Double    -> [PATH] -> SDdata
+  Nav       :: KeyCode -> SDdata
   deriving (Show)
 
 
@@ -130,6 +136,7 @@ setup window = void $ mdo
       mouseUpE            = UI.mouseup diagWindow
       mousedownE          = UI.mousedown diagWindow
       mousemoveE          = UI.mousemove diagWindow
+      navKeyPressE        = T.filterE (\kc -> (keyCodeLookup kc) `elem` [ArrowUp, ArrowDown, ArrowLeft, ArrowRight]) (UI.keydown codeArea)
 
 
       -- transform point into diagram coordinates and generate cursors events from it
@@ -141,57 +148,42 @@ setup window = void $ mdo
       mouseOutTupleE                                                  = T.filterE (\(p, cursor) -> cursor == []) pointPathTupleE
       mouseInTupleE                                                   = T.filterE (\(p, cursor) -> cursor /= []) pointPathTupleE
 
-      -- split these mousedown events into drag vs scale events
-      -- (dragE, scaleE) = splitEScaleDrag simpleDiagramB mouseInTupleE
 
       -- helper events for what it means to be dragging
-      ismousedownE                                                    = True <$ mouseInTupleE --dragE
-      -- ismouseSCdownE                                                  = True <$ scaleE
+      ismousedownE                                                    = True <$ mouseInTupleE
       (ismouseUpE   :: T.Event Bool)                                  = False <$ mouseUpE
       (ismouseDragE :: T.Event Bool)                                  = T.unionWith (&&) ismousedownE ismouseUpE
-      -- (ismouseDragSCE :: T.Event Bool)                                = T.unionWith (&&) ismouseSCdownE ismouseUpE
 
       -- again to avoid lagging, put point and drag flag associated with it into one event
       (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
-      -- (pointMoveSCBoolE :: T.Event (P2 Double, Bool))                 = zipE (makePoint <$> mousemoveE) ismouseDragSCE
 
   ismouseDragB                                   <- T.stepper False ismouseDragE
-  -- ismouseDragSCB                                 <- T.stepper False ismouseDragSCE
   cursorB                                          <- T.stepper [] cursorE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
+  multKeyPressB                                  <- T.stepper 0 navKeyPressE
 
   let
    -- untransformed and transformed clicking, dragging and scaling events
       mouseOutE        = fst <$> mouseOutTupleE
       draggingE        = T.whenE ismouseDragB mousemoveE
-      -- draggingSCE      = T.whenE ismouseDragSCB mousemoveE
       mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE)
-      -- mvPointsSCE      = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingSCE)
-
-
     -- merge mousedown event with drag event to avoid jumping when dragging resumes
       unionEventMvDown = T.unionWith const (fst <$> mouseInTupleE) mvPointsE
-      -- unionEventScDown = T.unionWith const (fst <$> scaleE) mvPointsSCE
-
 
   bPrevMousePt                                     <- T.stepper origin unionEventMvDown
-  -- bprevMouseScalept                                <- T.stepper origin unionEventScDown
 
   let
 
   -- simulate dragging
       (translations       :: T.Event (V2 Double))                     = fmap (\prev cur -> cur .-. prev) bPrevMousePt T.<@> mvPointsE
-      -- origin is definitely not the right thing to use, but how do you get center of circle
-      -- (scales             :: T.Event Double )                         = scaleBy <$> (head <$> cursorB) <*>  simpleDiagramB <*> bprevMouseScalept T.<@> mvPointsSCE --fmap (\origPt curPt -> norm (curPt .-. origin) / norm (origPt .-. origin)) bprevMouseScalept T.<@> mvPointsSCE
 
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
 
-      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE
+      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE navKeyPressE
       (simpleDiagramE :: T.Event (SDzipper -> SDzipper))    = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (SEmpty, Top) simpleDiagramE
-  -- testScalesB                                  <- T.stepper 0.0 scales
 
   let
   -- render diagram
@@ -200,8 +192,8 @@ setup window = void $ mdo
       diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
       transformB    = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
-      debuggStrB    = (show <$> cursorB)
-      codeAreaStrB  = (pprintTree 4 <$> simpleDiagramB)
+      debuggStrB    = (show <$> simpleDiagramB')
+      codeAreaStrB  = (pprintTree <$> simpleDiagramB)
 
 
   -- Sink diagram behavior into appropriate gui elements
@@ -226,14 +218,16 @@ zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing)
 makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double [Bool]))
 makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 4 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
+
+
 -- handle different kinds of edits to the diagram
 runSDdata :: SDdata -> Maybe (SDzipper -> SDzipper)
-runSDdata (FrmCode str) = case myparse parseAtom str of
+runSDdata (FrmCode str)   = case myparse parseAtom str of
   Right sd -> Just $ const (makeZipper sd)
   Left  _  -> Nothing
-runSDdata (DragCoord cd) = Just $ \zp -> refactorTree cd zp
-runSDdata (Click pt) = Just $ \sd -> editZ (Atop (createNewCircle pt)) sd
--- runSDdata (SCale d pths) = Just $ \sd -> foldr (\pth -> reScale d pth) sd pths    -- problematic
+runSDdata (DragCoord cd)  = Just $ \zp -> refactorTree cd zp
+runSDdata (Click pt)      = Just $ \sd -> editZ (Atop (createNewCircle pt)) sd
+runSDdata (Nav k)  = Just $ \zp -> navigateTree (keyCodeLookup k) zp
 
 
 -- creating and new circle, to be used on click outside of diagram.
@@ -242,8 +236,8 @@ createNewCircle p = Translate (p .-. origin) Circle
 
 
 -- merge all different kinds of edits to the diagram into one data type.
-mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Event SDdata
-mergeEvents e1 e2 e3 = head <$> T.unions [FrmCode <$> e1, DragCoord <$> e2, Click <$> e3]
+mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Event KeyCode -> T.Event SDdata
+mergeEvents e1 e2 e3 e4 = head <$> T.unions [FrmCode <$> e1, DragCoord <$> e2, Click <$> e3, Nav <$> e4]
 
 -- turn returned coordinate into point
 makePoint :: (Int, Int) -> P2 Double
@@ -260,8 +254,9 @@ refactorTree'  p Circle                      = Translate p Circle
 refactorTree'  p Triangle                    = Translate p Triangle
 refactorTree'  p Square                      = Translate p Square
 refactorTree'  p (Polygon n)                 = Translate p (Polygon n)
-refactorTree'  (V2 d1 d2) (Scale d sd)     = Scale d (refactorTree' (V2 (d1 / d) (d2 / d)) sd)
-refactorTree'  p (Translate t sd)          = case sd of
+refactorTree'  p (Cursor sd)                 = Cursor (refactorTree' p sd)
+refactorTree'  (V2 d1 d2) (Scale d sd)       = Scale d (refactorTree' (V2 (d1 / d) (d2 / d)) sd)
+refactorTree'  p (Translate t sd)            = case sd of
   Circle      -> Translate (p ^+^ t) sd
   Triangle    -> Translate (p ^+^ t) sd
   Square      -> Translate (p ^+^ t) sd
@@ -271,6 +266,16 @@ refactorTree' p  d@(Atop sd1 sd2)         = Atop (refactorTree' p sd1) (refactor
 
 
 
+{- handle contro-hey presses -}
+navigateTree :: Key -> SDzipper -> SDzipper
+navigateTree k z
+                  |k == ArrowDown  = downZ z
+                  |k == ArrowUp    = upZ z
+                  |k == ArrowLeft  = leftZ z
+                  |k == ArrowRight = rightZ z
+                  |otherwise       = z
+
+
 {- pretty print the updated syntax tree
    in order to sink it in the textarea.
  -}
@@ -278,15 +283,17 @@ refactorTree' p  d@(Atop sd1 sd2)         = Atop (refactorTree' p sd1) (refactor
 pprintVec :: V2 Double -> String
 pprintVec (V2 d1 d2) = "(" ++ printf "%.3f" d1 ++ "," ++ printf "%.3f" d2 ++ ")"
 
-pprintTree :: Int -> SimpleDiagram -> String
-pprintTree ind SEmpty                      = ""
-pprintTree ind Circle                      = "circle"
-pprintTree ind Square                      = "square"
-pprintTree ind Triangle                    = "triangle"
-pprintTree ind (Polygon n)                 = "polygon " ++ show n
-pprintTree ind (Scale d sd)                = "scale \n" ++ (replicateSp (ind + 2)) ++ printf "%.3f" d ++ "\n" ++ (replicateSp (ind + 2)) ++ "(" ++ (pprintTree (ind+5) sd) ++ ")"
-pprintTree ind (Translate v@(V2 d1 d2) sd) = "translate \n" ++ (replicateSp (ind + 2)) ++ pprintVec v ++ "\n" ++ (replicateSp (ind + 2)) ++ "(" ++ (pprintTree (ind+5) sd) ++ ")"
-pprintTree ind (Atop sd1 sd2)              = "atop \n" ++ (replicateSp ind) ++ "(" ++  (pprintTree (5+ind) sd1) ++ ") \n" ++ (replicateSp ind) ++ "(" ++  (pprintTree (5+ind) sd2) ++ ")"
+
+pprintTree ::  SimpleDiagram -> String
+pprintTree SEmpty                      = ""
+pprintTree Circle                      = "circle"
+pprintTree Square                      = "square"
+pprintTree Triangle                    = "triangle"
+pprintTree (Polygon n)                 = "polygon " ++ show n
+pprintTree (Cursor sd)                 = "[" ++ pprintTree sd ++ "]"
+pprintTree (Scale d sd)                = "scale " ++ printf "%.3f" d ++ "(" ++ (pprintTree sd) ++ ")"
+pprintTree (Translate v@(V2 d1 d2) sd) = "translate" ++ pprintVec v ++ "(" ++ (pprintTree sd) ++ ")"
+pprintTree (Atop sd1 sd2)              = "atop " ++ "(" ++  (pprintTree sd1) ++ ") " ++ "(" ++  (pprintTree sd2) ++ ")"
 
 replicateSp :: Int -> String
 replicateSp n = foldr (++) [] (replicate n " ")

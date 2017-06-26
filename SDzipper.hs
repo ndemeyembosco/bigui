@@ -11,7 +11,7 @@
 
 module SDzipper
     (SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
-    upmostZ, editZ, unZipSD, unZipWith, makeZipper) where
+    upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ) where
 
 import Diagrams.Prelude
 
