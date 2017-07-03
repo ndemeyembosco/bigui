@@ -110,8 +110,11 @@ data SDdata where
   DragCoord :: V2 Double -> SDdata
   Click     :: P2 Double -> SDdata
   -- SCale     :: Double    -> [PATH] -> SDdata
-  Nav       :: KeyCode -> SDdata
+  Nav       :: DIRECTION -> SDdata
   deriving (Show)
+
+data DIRECTION = LEFT | RIGHT | UP | DOWN
+  deriving (Show, Eq)
 
 
 
@@ -124,10 +127,15 @@ setup :: T.Window -> T.UI ()
 setup window = void $ mdo
 
   -- GUI components set up and styling
-  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "600px"), ("border", "1px solid #000")]
-  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "50" T.# T.set (T.attr "cols") "50"
-  debuggArea         <- UI.div T.#. "debugg" # T.set T.style [("width", "500px"), ("height", "600px"), ("border", "1px solid #000")]
-  T.getBody window T.#+ [UI.grid [[UI.row [T.element diagWindow, T.element debuggArea], UI.row [T.element codeArea]]]]
+  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "500px"), ("border", "1px solid #000")]
+  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "20" T.# T.set (T.attr "cols") "60"
+  debuggArea         <- UI.div T.#. "debugg" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
+  upButton           <- UI.button T.# T.set T.text "up" # T.set T.style [("width", "50px"), ("height", "20px")]
+  downButton         <- UI.button T.# T.set T.text "down" # T.set T.style [("width", "50px"), ("height", "20px")]
+  leftButton         <- UI.button T.# T.set T.text "left" # T.set T.style [("width", "50px"), ("height", "20px")]
+  rightButton        <- UI.button T.# T.set T.text "right" # T.set T.style [("width", "50px"), ("height", "20px")]
+  T.getBody window T.#+ [UI.grid [[UI.column [T.element diagWindow, T.element debuggArea], UI.column [T.element codeArea, UI.row [T.element upButton, T.element downButton], UI.row [T.element leftButton, T.element rightButton]]]]]
+  bodyWindow         <- T.getBody window
 
   let
 
@@ -136,8 +144,10 @@ setup window = void $ mdo
       mouseUpE            = UI.mouseup diagWindow
       mousedownE          = UI.mousedown diagWindow
       mousemoveE          = UI.mousemove diagWindow
-      navKeyPressE        = T.filterE (\kc -> (keyCodeLookup kc) `elem` [ArrowUp, ArrowDown, ArrowLeft, ArrowRight]) (UI.keydown codeArea)
-
+      upClickE            = UP    <$ UI.click upButton
+      downClickE          = DOWN  <$ UI.click downButton
+      leftClickE          = LEFT  <$ UI.click leftButton
+      rightClickE         = RIGHT <$ UI.click rightButton
 
       -- transform point into diagram coordinates and generate cursors events from it
       mousedownTrE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> mousedownE)
@@ -158,9 +168,8 @@ setup window = void $ mdo
       (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
 
   ismouseDragB                                   <- T.stepper False ismouseDragE
-  cursorB                                          <- T.stepper [] cursorE
+  cursorB                                        <- T.stepper [] cursorE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
-  multKeyPressB                                  <- T.stepper 0 navKeyPressE
 
   let
    -- untransformed and transformed clicking, dragging and scaling events
@@ -180,14 +189,15 @@ setup window = void $ mdo
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
 
-      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE navKeyPressE
+      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE
       (simpleDiagramE :: T.Event (SDzipper -> SDzipper))    = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (SEmpty, Top) simpleDiagramE
 
+
   let
   -- render diagram
-      simpleDiagramB = unZipSD <$> simpleDiagramB'
+      simpleDiagramB = unZipSD <$> (editZ Cursor <$> simpleDiagramB')
       dTupleB       = makeDToDraw <$> simpleDiagramB
       diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
       transformB    = fmap (\(x, y, z) -> y) dTupleB
@@ -227,7 +237,7 @@ runSDdata (FrmCode str)   = case myparse parseAtom str of
   Left  _  -> Nothing
 runSDdata (DragCoord cd)  = Just $ \zp -> refactorTree cd zp
 runSDdata (Click pt)      = Just $ \sd -> editZ (Atop (createNewCircle pt)) sd
-runSDdata (Nav k)  = Just $ \zp -> navigateTree (keyCodeLookup k) zp
+runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
 
 
 -- creating and new circle, to be used on click outside of diagram.
@@ -236,8 +246,9 @@ createNewCircle p = Translate (p .-. origin) Circle
 
 
 -- merge all different kinds of edits to the diagram into one data type.
-mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double) -> T.Event KeyCode -> T.Event SDdata
-mergeEvents e1 e2 e3 e4 = head <$> T.unions [FrmCode <$> e1, DragCoord <$> e2, Click <$> e3, Nav <$> e4]
+mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double)
+               -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event SDdata
+mergeEvents e1 e2 e3 e4 e5 e6 e7= head <$> T.unions [FrmCode <$> e1, DragCoord <$> e2, Click <$> e3, Nav <$> e4, Nav <$> e5, Nav <$> e6, Nav <$> e7]
 
 -- turn returned coordinate into point
 makePoint :: (Int, Int) -> P2 Double
@@ -250,30 +261,20 @@ refactorTree :: V2 Double -> SDzipper -> SDzipper
 refactorTree v sz = editZ (refactorTree' v) sz
 
 refactorTree' :: V2 Double -> SimpleDiagram -> SimpleDiagram
-refactorTree'  p Circle                      = Translate p Circle
-refactorTree'  p Triangle                    = Translate p Triangle
-refactorTree'  p Square                      = Translate p Square
-refactorTree'  p (Polygon n)                 = Translate p (Polygon n)
-refactorTree'  p (Cursor sd)                 = Cursor (refactorTree' p sd)
-refactorTree'  (V2 d1 d2) (Scale d sd)       = Scale d (refactorTree' (V2 (d1 / d) (d2 / d)) sd)
-refactorTree'  p (Translate t sd)            = case sd of
-  Circle      -> Translate (p ^+^ t) sd
-  Triangle    -> Translate (p ^+^ t) sd
-  Square      -> Translate (p ^+^ t) sd
-  Polygon _   -> Translate (p ^+^ t) sd
-  _           -> Translate t (refactorTree' p sd)
-refactorTree' p  d@(Atop sd1 sd2)         = Atop (refactorTree' p sd1) (refactorTree' p sd2)
+refactorTree'  p (Translate v sd)       = Translate (p ^+^ v) sd
+refactorTree'  v  sd                  = Translate v sd
+
 
 
 
 {- handle contro-hey presses -}
-navigateTree :: Key -> SDzipper -> SDzipper
+navigateTree :: DIRECTION -> SDzipper -> SDzipper
 navigateTree k z
-                  |k == ArrowDown  = downZ z
-                  |k == ArrowUp    = upZ z
-                  |k == ArrowLeft  = leftZ z
-                  |k == ArrowRight = rightZ z
-                  |otherwise       = z
+                  |k == DOWN  = downZ  z
+                  |k == UP    = upZ    z
+                  |k == LEFT  = leftZ  z
+                  |k == RIGHT = rightZ z
+                  |otherwise  = z
 
 
 {- pretty print the updated syntax tree
@@ -290,7 +291,7 @@ pprintTree Circle                      = "circle"
 pprintTree Square                      = "square"
 pprintTree Triangle                    = "triangle"
 pprintTree (Polygon n)                 = "polygon " ++ show n
-pprintTree (Cursor sd)                 = "[" ++ pprintTree sd ++ "]"
+pprintTree (Cursor sd)                 = pprintTree sd
 pprintTree (Scale d sd)                = "scale " ++ printf "%.3f" d ++ "(" ++ (pprintTree sd) ++ ")"
 pprintTree (Translate v@(V2 d1 d2) sd) = "translate" ++ pprintVec v ++ "(" ++ (pprintTree sd) ++ ")"
 pprintTree (Atop sd1 sd2)              = "atop " ++ "(" ++  (pprintTree sd1) ++ ") " ++ "(" ++  (pprintTree sd2) ++ ")"
