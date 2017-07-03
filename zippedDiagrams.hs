@@ -48,13 +48,13 @@ import           KeyCode
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
 
-interpSimpleDiagram :: SimpleDiagram -> QDiagram SVG V2 Double [Bool]
+interpSimpleDiagram :: SimpleDiagram -> QDiagram SVG V2 Double Any
 interpSimpleDiagram SEmpty           = mempty
-interpSimpleDiagram Circle           = circle 1 # value [False]
-interpSimpleDiagram Square           = square 1 # value [False]
-interpSimpleDiagram Triangle         = triangle 1 # value [False]
-interpSimpleDiagram (Polygon sds)    = regPoly sds 1 # value [False]
-interpSimpleDiagram (Cursor sd)      = [True] <$ (interpSimpleDiagram sd  # lw veryThick)
+interpSimpleDiagram Circle           = circle 1
+interpSimpleDiagram Square           = square 1
+interpSimpleDiagram Triangle         = triangle 1
+interpSimpleDiagram (Polygon sds)    = regPoly sds 1
+interpSimpleDiagram (Cursor sd)      = (interpSimpleDiagram sd  # lw veryThick)
 interpSimpleDiagram (Scale d sd)     = interpSimpleDiagram sd # scale d
 interpSimpleDiagram (Translate v sd) = interpSimpleDiagram sd # translate v
 interpSimpleDiagram (Atop sd1 sd2)   = interpSimpleDiagram sd1 `atop` interpSimpleDiagram sd2
@@ -67,10 +67,10 @@ parseSVG s@(x:xs)
              |otherwise =  parseSVG xs
 
 
-diagTuple' :: QDiagram SVG V2 Double [Bool] -> (T2 Double, Element)
+diagTuple' :: QDiagram SVG V2 Double Any -> (T2 Double, Element)
 diagTuple' myDiag' = renderDiaT SVG (SVGOptions (mkWidth 250) Nothing "" [] True) myDiag'
 
-renderedString' :: QDiagram SVG V2 Double [Bool] -> (T2 Double, String)
+renderedString' :: QDiagram SVG V2 Double Any -> (T2 Double, String)
 renderedString' myDiag = case diagTuple' myDiag of
  (t, rendered) -> (t, DT.unpack $ renderText $ rendered)
 
@@ -93,7 +93,7 @@ parseAtom = Circle <$ myreserved "circle"
     <|> parseCursor
 
 
-evalExpr' :: String -> Maybe (QDiagram SVG V2 Double [Bool])
+evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
 evalExpr' s = case myparse parseAtom s of
   Right sd -> Just (interpSimpleDiagram sd)
   Left _   -> Nothing
@@ -130,11 +130,12 @@ setup window = void $ mdo
   diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "500px"), ("border", "1px solid #000")]
   codeArea           <- UI.textarea T.# T.set (T.attr "rows") "20" T.# T.set (T.attr "cols") "60"
   debuggArea         <- UI.div T.#. "debugg" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
+  debuggArea2        <- UI.div T.#. "debugg2" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
   upButton           <- UI.button T.# T.set T.text "up" # T.set T.style [("width", "50px"), ("height", "20px")]
   downButton         <- UI.button T.# T.set T.text "down" # T.set T.style [("width", "50px"), ("height", "20px")]
   leftButton         <- UI.button T.# T.set T.text "left" # T.set T.style [("width", "50px"), ("height", "20px")]
   rightButton        <- UI.button T.# T.set T.text "right" # T.set T.style [("width", "50px"), ("height", "20px")]
-  T.getBody window T.#+ [UI.grid [[UI.column [T.element diagWindow, T.element debuggArea], UI.column [T.element codeArea, UI.row [T.element upButton, T.element downButton], UI.row [T.element leftButton, T.element rightButton]]]]]
+  T.getBody window T.#+ [UI.grid [[UI.column [T.element diagWindow, T.element debuggArea], UI.column [T.element codeArea, UI.row [T.element upButton, T.element downButton], UI.row [T.element leftButton, T.element rightButton], T.element debuggArea2]]]]
   bodyWindow         <- T.getBody window
 
   let
@@ -154,9 +155,9 @@ setup window = void $ mdo
       cursorE               = sample    <$> q2DiagramB           T.<@> mousedownTrE
 
       -- to avoid lagging zip the point and cursor obtained from it into one event
-      (pointPathTupleE :: T.Event (P2 Double, [Bool]))                = zipE mousedownTrE cursorE
-      mouseOutTupleE                                                  = T.filterE (\(p, cursor) -> cursor == []) pointPathTupleE
-      mouseInTupleE                                                   = T.filterE (\(p, cursor) -> cursor /= []) pointPathTupleE
+      (pointPathTupleE :: T.Event (P2 Double, Any))                   = zipE mousedownTrE cursorE
+      mouseOutTupleE                                                  = T.filterE (\(p, cursor) -> getAny cursor == False) pointPathTupleE
+      mouseInTupleE                                                   = T.filterE (\(p, cursor) -> getAny cursor == True) pointPathTupleE
 
 
       -- helper events for what it means to be dragging
@@ -168,7 +169,7 @@ setup window = void $ mdo
       (pointMoveBoolE :: T.Event (P2 Double, Bool))                   = zipE (makePoint <$> mousemoveE) ismouseDragE
 
   ismouseDragB                                   <- T.stepper False ismouseDragE
-  cursorB                                        <- T.stepper [] cursorE
+  cursorB                                        <- T.stepper mempty cursorE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
 
   let
@@ -193,6 +194,7 @@ setup window = void $ mdo
       (simpleDiagramE :: T.Event (SDzipper -> SDzipper))    = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (SEmpty, Top) simpleDiagramE
+  testBehavior                                  <- T.stepper (makePoint (0, 0), mempty) pointPathTupleE
 
 
   let
@@ -207,6 +209,7 @@ setup window = void $ mdo
 
 
   -- Sink diagram behavior into appropriate gui elements
+  T.element debuggArea2 # T.sink UI.text (show <$> testBehavior)
   T.element debuggArea # T.sink UI.text debuggStrB
   T.element diagWindow # T.sink UI.html diagramStrB
   T.element codeArea   # T.sink UI.value codeAreaStrB
@@ -225,7 +228,7 @@ zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing)
                                                        (fmap (\pth -> (Nothing, Just pth)) e2))
 
 -- render syntax tree
-makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double [Bool]))
+makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double Any))
 makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 4 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
 
