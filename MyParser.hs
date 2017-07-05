@@ -43,7 +43,7 @@ ident :: Parser String
 ident = identifier lexer
 
 mydouble :: Parser Double
-mydouble = float lexer
+mydouble = signed $ float lexer
 
 myinteger :: Parser Int
 myinteger = fromIntegral <$> integer lexer
@@ -53,3 +53,12 @@ mywhiteSpace = whiteSpace lexer
 
 myparse :: Parser a -> String -> Either P.ParseError a
 myparse p = P.parse p ""
+
+
+signed :: Num a => Parser a -> Parser a
+signed pn = handleSign <$> optionMaybe (mysymbol "-") <*> pn
+  where
+    handleSign :: Num a => Maybe String -> a -> a
+    handleSign m n = case m of
+      Just t  -> negate n
+      _       -> n

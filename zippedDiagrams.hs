@@ -90,7 +90,7 @@ parseAtom = Circle <$ myreserved "circle"
     <|> Translate <$> (myreserved "translate" *> parseCoord) <*> parseAtom
     <|> Atop <$> (myreserved "atop" *> parseAtom) <*> parseAtom
     <|> myparens parseAtom
-    <|> parseCursor
+    -- <|> parseCursor) -- <* eof
 
 
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
@@ -152,7 +152,7 @@ setup window = void $ mdo
 
       -- transform point into diagram coordinates and generate cursors events from it
       mousedownTrE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> mousedownE)
-      cursorE               = sample    <$> q2DiagramB           T.<@> mousedownTrE
+      cursorE             = sample    <$> q2DiagramB           T.<@> mousedownTrE
 
       -- to avoid lagging zip the point and cursor obtained from it into one event
       (pointPathTupleE :: T.Event (P2 Double, Any))                   = zipE mousedownTrE cursorE
@@ -171,6 +171,7 @@ setup window = void $ mdo
   ismouseDragB                                   <- T.stepper False ismouseDragE
   cursorB                                        <- T.stepper mempty cursorE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
+  codeAreaChangedB                               <- T.stepper "" codeAreaE
 
   let
    -- untransformed and transformed clicking, dragging and scaling events
@@ -191,26 +192,26 @@ setup window = void $ mdo
   , run the edits and generate behavior of obtained simpleDiagram -}
 
       (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE
-      (simpleDiagramE :: T.Event (SDzipper -> SDzipper))    = T.filterJust (runSDdata <$> formedSDdataE)
+      (simpleDiagramE :: T.Event (SDzipper -> SDzipper))              = T.filterJust (runSDdata <$> formedSDdataE)
 
-  (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (SEmpty, Top) simpleDiagramE
-  testBehavior                                  <- T.stepper (makePoint (0, 0), mempty) pointPathTupleE
+  (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (SEmpty, Top, mempty) simpleDiagramE
+  testBehavior                                  <- T.stepper (V2 0.0 0.0) translations
 
 
   let
   -- render diagram
       simpleDiagramB = unZipSD <$> (editZ Cursor <$> simpleDiagramB')
-      dTupleB       = makeDToDraw <$> simpleDiagramB
-      diagramStrB   = fmap (\(x, y, z) -> x) dTupleB
-      transformB    = fmap (\(x, y, z) -> y) dTupleB
-      q2DiagramB    = fmap (\(x, y, z) -> z) dTupleB
-      debuggStrB    = (show <$> simpleDiagramB')
-      codeAreaStrB  = (pprintTree <$> simpleDiagramB)
+      dTupleB        = makeDToDraw <$> simpleDiagramB
+      diagramStrB    = fmap (\(x, y, z) -> x) dTupleB
+      transformB     = fmap (\(x, y, z) -> y) dTupleB
+      q2DiagramB     = fmap (\(x, y, z) -> z) dTupleB
+      -- debuggStrB     = (show <$> simpleDiagramB')
+      codeAreaStrB   = (pprintTree <$> simpleDiagramB)
 
 
   -- Sink diagram behavior into appropriate gui elements
   T.element debuggArea2 # T.sink UI.text (show <$> testBehavior)
-  T.element debuggArea # T.sink UI.text debuggStrB
+  -- T.element debuggArea # T.sink UI.text debuggStrB
   T.element diagWindow # T.sink UI.html diagramStrB
   T.element codeArea   # T.sink UI.value codeAreaStrB
 
@@ -238,7 +239,7 @@ runSDdata :: SDdata -> Maybe (SDzipper -> SDzipper)
 runSDdata (FrmCode str)   = case myparse parseAtom str of
   Right sd -> Just $ const (makeZipper sd)
   Left  _  -> Nothing
-runSDdata (DragCoord cd)  = Just $ \zp -> refactorTree cd zp
+runSDdata (DragCoord cd)  = Just $ \zp@(sd, ctx, tr) -> refactorTree tr cd zp
 runSDdata (Click pt)      = Just $ \sd -> editZ (Atop (createNewCircle pt)) sd
 runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
 
@@ -260,12 +261,13 @@ makePoint (x, y) = p2 (fromIntegral x, fromIntegral y)
 
 --- probably wrong.
 
-refactorTree :: V2 Double -> SDzipper -> SDzipper
-refactorTree v sz = editZ (refactorTree' v) sz
+refactorTree :: T2 Double -> V2 Double -> SDzipper -> SDzipper
+refactorTree tr v sz = editZ (refactorTree' (transform (inv tr) v)) sz   -- use inv transformations
 
 refactorTree' :: V2 Double -> SimpleDiagram -> SimpleDiagram
-refactorTree'  p (Translate v sd)       = Translate (p ^+^ v) sd
-refactorTree'  v  sd                  = Translate v sd
+refactorTree'  p (Translate v sd)          = Translate (p ^+^ v) sd
+-- refactorTree'  (V2 d1 d2) sc@(Scale d sd)  = Translate (V2 (d1 / d) (d2 / d)) sc
+refactorTree'  v  sd                       = Translate v sd
 
 
 
