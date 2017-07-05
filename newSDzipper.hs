@@ -44,21 +44,6 @@ data Transformation where
 
 
 
-
--- data SimpleDiagram where
---   SEmpty    :: SimpleDiagram
---   Circle    :: SimpleDiagram
---   Square    :: SimpleDiagram
---   Triangle  :: SimpleDiagram
---   Polygon   :: Sides         -> SimpleDiagram
---   Cursor    :: SimpleDiagram -> SimpleDiagram
---   Scale     :: Double        -> SimpleDiagram -> SimpleDiagram
---   Translate :: V2 Double     -> SimpleDiagram -> SimpleDiagram
---   Atop      :: SimpleDiagram -> SimpleDiagram -> SimpleDiagram
---   deriving (Show, Eq)
-
-
-
 data SDCtx where
   Top       :: SDCtx
   ScaleCtx  :: Double         -> SDCtx          -> SDCtx
@@ -71,8 +56,6 @@ data SDCtx where
 
 type SDzipper = (SimpleDiagram, SDCtx, T2 Double)  -- add transformations and make this a triple?
 
--- instance Show SDzipper where
---   show (sd, ctx, tr) = "(" ++ show sd ++ "," ++ show ctx ++ ")"
 
 -- findTransform :: Transformation
 
