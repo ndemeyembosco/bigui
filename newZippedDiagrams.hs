@@ -63,31 +63,14 @@ interpSimpleDiagram (T tr sd) = case tr of
   Scale d       -> interpSimpleDiagram sd # scale d
   Translate v   -> interpSimpleDiagram sd # translate v
 interpSimpleDiagram (Iterate n tra sd) = case tra of
-  Scale d       -> atopify $ iterateN n (scale d) (interpSimpleDiagram sd)
-  Translate v   -> atopify $ iterateN n (translate v) (interpSimpleDiagram sd)
+  Scale d       -> mconcat $ iterateN n (scale d) (interpSimpleDiagram sd)
+  Translate v   -> mconcat $ iterateN n (translate v) (interpSimpleDiagram sd)
 interpSimpleDiagram (Cursor sd)      = (interpSimpleDiagram sd  # lw veryThick)
 
 
 atopify :: [QDiagram SVG V2 Double Any] -> QDiagram SVG V2 Double Any
 atopify = foldr (\sd1 sd2 -> atop sd1 sd2) mempty
 
-
--- main :: IO ()
--- main = undefined
-
-
--- interpSimpleDiagram :: SimpleDiagram -> QDiagram SVG V2 Double Any
--- interpSimpleDiagram SEmpty           = mempty
--- interpSimpleDiagram Circle           = circle 1
--- interpSimpleDiagram Square           = square 1
--- interpSimpleDiagram Triangle         = triangle 1
--- interpSimpleDiagram (Polygon sds)    = regPoly sds 1
--- interpSimpleDiagram (Cursor sd)      = (interpSimpleDiagram sd  # lw veryThick)
--- interpSimpleDiagram (Scale d sd)     = interpSimpleDiagram sd # scale d
--- interpSimpleDiagram (Translate v sd) = interpSimpleDiagram sd # translate v
--- interpSimpleDiagram (Atop sd1 sd2)   = interpSimpleDiagram sd1 `atop` interpSimpleDiagram sd2
-
-------------------------------------------------------------------------------------------------
 parseSVG :: String -> String
 parseSVG [] = []
 parseSVG s@(x:xs)
@@ -162,7 +145,7 @@ setup window = void $ mdo
 
   -- GUI components set up and styling
   diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "500px"), ("border", "1px solid #000")]
-  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "20" T.# T.set (T.attr "cols") "60"
+  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "20" T.# T.set (T.attr "cols") "100"
   debuggArea         <- UI.div T.#. "debugg" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
   debuggArea2        <- UI.div T.#. "debugg2" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
   upButton           <- UI.button T.# T.set T.text "up" # T.set T.style [("width", "50px"), ("height", "20px")]
@@ -335,11 +318,15 @@ pprintTransfromEdit ((Scale d)) = "scale " ++ show d
 pprintTransfromEdit ((Translate v)) = "translate " ++ pprintVec v
 
 pprintTree ::  SimpleDiagram -> String
-pprintTree (Pr d)             = pprintPrim d
-pprintTree (T tra sd)         = (pprintTransfromEdit tra) ++ " (" ++ pprintTree sd ++ ")"
-pprintTree (Atop sdl sdr)     = "atop " ++ " (" ++ pprintTree sdl ++ ") " ++ "(" ++ pprintTree sdr ++ ")"
-pprintTree (Iterate n tra sd) = "iterate " ++ show n ++ pprintTransfromEdit tra ++ " (" ++ pprintTree sd ++ ")"
-pprintTree (Cursor sd)        = pprintTree sd
+pprintTree = pprintTree' 0
 
 replicateSp :: Int -> String
-replicateSp n = foldr (++) [] (replicate n " ")
+replicateSp n = foldr (++) [] (replicate n "\t")
+
+
+pprintTree' ::  Int -> SimpleDiagram -> String
+pprintTree' n (Pr d)             = replicateSp n ++ (pprintPrim d)
+pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++ "\n" ++  pprintTree' (n + 1) sd
+pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr
+pprintTree' n (Iterate m tra sd) = replicateSp n ++ "iterate " ++ show m ++ " " ++ " (" ++ pprintTransfromEdit tra ++ ") " ++ "\n"  ++  pprintTree' (n + 1) sd
+pprintTree' n (Cursor sd)        = pprintTree' n sd
