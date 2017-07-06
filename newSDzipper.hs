@@ -11,8 +11,8 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module SDzipper
-    (SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
+module NewSDzipper
+    (TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
     upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ) where
 
 import Diagrams.Prelude
@@ -22,13 +22,15 @@ type Sides = Int
 
 
 data SimpleDiagram where
-  P       :: Primitive      -> SimpleDiagram
+  Cursor   :: SimpleDiagram -> SimpleDiagram
+  Pr       :: Primitive      -> SimpleDiagram
   Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
-  T       :: Transformation -> SimpleDiagram  -> SimpleDiagram
-  Iterate :: Int            -> Transformation -> SimpleDiagram -> SimpleDiagram
+  T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
+  Iterate :: Int            -> TransformationEdit -> SimpleDiagram -> SimpleDiagram
   deriving (Show, Eq)
 
 data Primitive where
+  SEmpty   :: Primitive
   Circle   :: Primitive
   Triangle :: Primitive
   Square   :: Primitive
@@ -36,9 +38,9 @@ data Primitive where
   deriving (Show, Eq)
 
 
-data Transformation where
-  Scale     :: Double    -> Transformation
-  Translate :: V2 Double -> Transformation
+data TransformationEdit where
+  Scale     :: Double    -> TransformationEdit
+  Translate :: V2 Double -> TransformationEdit
   deriving (Show, Eq)
 
 
@@ -50,19 +52,19 @@ data SDCtx where
   TransCtx  :: V2 Double      -> SDCtx          -> SDCtx
   AtopLCtx  :: SDCtx          -> SimpleDiagram  -> SDCtx
   AtopRCtx  :: SimpleDiagram  -> SDCtx          -> SDCtx
-  IterCtx   :: Int            -> Transformation -> SDCtx -> SDCtx
+  IterCtx   :: Int            -> TransformationEdit -> SDCtx -> SDCtx
   deriving (Show)
 
 
 type SDzipper = (SimpleDiagram, SDCtx, T2 Double)  -- add transformations and make this a triple?
 
 
--- findTransform :: Transformation
+-- findTransform :: TransformationEdit
 
 upZ :: SDzipper -> SDzipper
 upZ c@(sd, Top, tr)            = c
-upZ (sd, ScaleCtx d ctx, tr)   = (Scale d sd, ctx, tr <> inv (scaling d))
-upZ (sd, TransCtx v ctx, tr)   = (Translate v sd, ctx, tr <> inv (translation v))
+upZ (sd, ScaleCtx d ctx, tr)   = (T (Scale d) sd, ctx, tr <> inv (scaling d))
+upZ (sd, TransCtx v ctx, tr)   = (T (Translate v) sd, ctx, tr <> inv (translation v))
 upZ (sd, AtopLCtx ctx sd1, tr) = (Atop sd sd1, ctx, tr)
 upZ (sd, AtopRCtx sd1 ctx, tr) = (Atop sd1 sd, ctx, tr)
 upZ (sd, IterCtx n tra ctx, tr) = (Iterate n tra sd, ctx, tr)
@@ -86,8 +88,8 @@ leftZ loc                        = loc
 
 downZ :: SDzipper -> SDzipper
 downZ (Atop l r, ctx, tr)         = (l, AtopLCtx ctx r, tr)   -- by default go left first.
-downZ (Scale d sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
-downZ (Translate v sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
+downZ (T (Scale d) sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
+downZ (T (Translate v) sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
 downZ (Iterate n tra sd, ctx, tr) = (sd, IterCtx n tra ctx, tr)
 downZ loc                         = loc
 
