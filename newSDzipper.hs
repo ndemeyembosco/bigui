@@ -26,7 +26,7 @@ data SimpleDiagram where
   Pr       :: Primitive      -> SimpleDiagram
   Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
   T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
-  Iterate :: Int            -> TransformationEdit -> SimpleDiagram -> SimpleDiagram
+  Iterate :: Int            -> TransformationEdit -> Maybe Int -> SimpleDiagram -> SimpleDiagram
   deriving (Show, Eq)
 
 data Primitive where
@@ -54,7 +54,7 @@ data SDCtx where
   RotateCtx :: Double         -> SDCtx          -> SDCtx
   AtopLCtx  :: SDCtx          -> SimpleDiagram  -> SDCtx
   AtopRCtx  :: SimpleDiagram  -> SDCtx          -> SDCtx
-  IterCtx   :: Int            -> TransformationEdit -> SDCtx -> SDCtx
+  IterCtx   :: Int            -> TransformationEdit -> Maybe Int -> SDCtx -> SDCtx
   deriving (Show)
 
 
@@ -70,7 +70,7 @@ upZ (sd, TransCtx v ctx, tr)   = (T (Translate v) sd, ctx, tr <> inv (translatio
 upZ (sd, RotateCtx a ctx, tr)  = (T (Rotate a) sd, ctx, tr <> inv (rotation (a @@ deg)))
 upZ (sd, AtopLCtx ctx sd1, tr) = (Atop sd sd1, ctx, tr)
 upZ (sd, AtopRCtx sd1 ctx, tr) = (Atop sd1 sd, ctx, tr)
-upZ (sd, IterCtx n tra ctx, tr) = (Iterate n tra sd, ctx, tr)
+upZ (sd, IterCtx n tra m ctx, tr) = (Iterate n tra m sd, ctx, tr)
 
 topZ :: SimpleDiagram -> SDzipper     -- a.k.a makeZipper
 topZ sd = (sd, Top, mempty)
@@ -94,7 +94,7 @@ downZ (Atop l r, ctx, tr)             = (l, AtopLCtx ctx r, tr)   -- by default 
 downZ (T (Scale d) sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
 downZ (T (Translate v) sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
 downZ (T (Rotate a) sd, ctx, tr)      = (sd, RotateCtx a ctx, tr <> rotation (a @@ deg))
-downZ (Iterate n tra sd, ctx, tr)     = (sd, IterCtx n tra ctx, tr)
+downZ (Iterate n tra m sd, ctx, tr)     = (sd, IterCtx n tra m ctx, tr)
 downZ loc                             = loc
 
 

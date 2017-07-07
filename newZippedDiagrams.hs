@@ -63,12 +63,26 @@ interpSimpleDiagram (T tr sd) = case tr of
   Scale d       -> interpSimpleDiagram sd # scale d
   Translate v   -> interpSimpleDiagram sd # translate v
   Rotate a      -> interpSimpleDiagram sd # rotate (a @@ deg)
-interpSimpleDiagram (Iterate n tra sd) = case tra of
-  Scale d       -> mconcat $ iterateN n (scale d) (interpSimpleDiagram sd)
-  Translate v   -> mconcat $ iterateN n (translate v) (interpSimpleDiagram sd)
-  Rotate a      -> mconcat $ iterateN n (rotate (a @@ deg)) (interpSimpleDiagram sd)
+interpSimpleDiagram (Iterate n tra m sd) = case m of
+  Nothing -> case tra of
+      Scale d       -> mconcat $ iterateN n (scale d) (interpSimpleDiagram sd)
+      Translate v   -> mconcat $ iterateN n (translate v) (interpSimpleDiagram sd)
+      Rotate a      -> mconcat $ iterateN n (rotate (a @@ deg)) (interpSimpleDiagram sd)
+  Just t  -> case tra of
+    Scale d         -> let l = iterateN n (scale d) (interpSimpleDiagram sd)  in (mconcat $ deleteDiagFList (t - 1) l)
+    Translate v     -> let l = iterateN n (translate v) (interpSimpleDiagram sd)  in (mconcat $ deleteDiagFList (t - 1) l)
+    Rotate a        -> let l = iterateN n (rotate (a @@ deg)) (interpSimpleDiagram sd) in (mconcat $ deleteDiagFList (t - 1) l)
 interpSimpleDiagram (Cursor sd)      = (interpSimpleDiagram sd  # lw veryThick)
 
+
+
+-- iterateNSD :: Int -> TransformationEdit -> SimpleDiagram -> [SimpleDiagram]
+-- iterateNSD n (Scale d) sd = T (Scale d) sd : iterateNSD (n - 1) (Scale (d+1))
+-- iterateNSD n (Translate v) sd =  T (Translate v) sd : iterateNSD (n - 1) (Translate (v ^+^ V2 1.0 0.0))
+-- iterateNSD n (Rotate a) sd = undefined
+
+deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
+deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
 
 atopify :: [QDiagram SVG V2 Double Any] -> QDiagram SVG V2 Double Any
 atopify = foldr (\sd1 sd2 -> atop sd1 sd2) mempty
@@ -99,6 +113,17 @@ parseTransformEdit = try (Translate <$> (myreserved "translate" *> parseCoord))
                      <|> (Scale <$> (myreserved "scale" *> mydouble))
                      <|> (Rotate <$> (myreserved "rotate" *> mydouble))
 
+parseSplit :: Parser Int
+parseSplit = mybrackets (mysymbol "/" *> myinteger)
+
+
+parseIterate :: Parser SimpleDiagram
+parseIterate = Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> optionMaybe parseSplit <*> parseAtom
+    -- where
+    --   handleSplit :: Int -> TransformationEdit -> Maybe Int -> SimpleDiagram -> SimpleDiagram
+    --   handleSplit n tra (Just n) sd = -- Iterate n tra (Just n) sd -- turn into atop somehow
+    --   handleSplit n tra Nothing sd  = Iterate n tra Nothing sd
+
 --
 parseAtom :: Parser SimpleDiagram
 parseAtom = (Pr Circle) <$ myreserved "circle"
@@ -107,7 +132,7 @@ parseAtom = (Pr Circle) <$ myreserved "circle"
     <|> Pr <$> (Polygon  <$> (myreserved "polygon" *> myinteger))
     <|> T <$> parseTransformEdit <*> parseAtom
     <|> Atop <$> (myreserved "atop" *> parseAtom) <*> parseAtom
-    <|> Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> parseAtom
+    <|> parseIterate
     <|> myparens parseAtom
     <|> parseCursor -- <* eof
 --
@@ -300,7 +325,7 @@ refactorTree'  v  sd                       = T (Translate v) sd
 
 
 
-{- handle contro-hey presses -}
+{- handle control-key presses -}
 navigateTree :: DIRECTION -> SDzipper -> SDzipper
 navigateTree k z
                   |k == DOWN  = downZ  z
@@ -342,7 +367,9 @@ pprintTree' ::  Int -> SimpleDiagram -> String
 pprintTree' n (Pr d)             = replicateSp n ++ (pprintPrim d)
 pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++ "\n" ++  pprintTree' (n + 1) sd
 pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr
-pprintTree' n (Iterate m tra sd) = replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ "\n"  ++  pprintTree' (n + 1) sd
+pprintTree' n (Iterate m tra may sd) = case may of
+  Nothing -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ "\n"  ++  pprintTree' (n + 1) sd
+  Just t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ show t ++ "]" ++ "\n"  ++  pprintTree' (n + 1) sd
 pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
   _             -> "==> " ++ pprintTree' n sd
