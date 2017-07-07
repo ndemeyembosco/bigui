@@ -81,7 +81,7 @@ parseSVG s@(x:xs)
 --
 --
 diagTuple' :: QDiagram SVG V2 Double Any -> (T2 Double, Element)
-diagTuple' myDiag' = renderDiaT SVG (SVGOptions (mkWidth 250) Nothing "" [] True) myDiag'
+diagTuple' myDiag' = renderDiaT SVG (SVGOptions (mkWidth 500) Nothing "" [] True) myDiag'
 --
 renderedString' :: QDiagram SVG V2 Double Any -> (T2 Double, String)
 renderedString' myDiag = case diagTuple' myDiag of
@@ -145,7 +145,7 @@ setup :: T.Window -> T.UI ()
 setup window = void $ mdo
 
   -- GUI components set up and styling
-  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "500px"), ("height", "500px"), ("border", "1px solid #000")]
+  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "520px"), ("height", "520px"), ("border", "1px solid #000")]
   codeArea           <- UI.textarea T.# T.set (T.attr "rows") "20" T.# T.set (T.attr "cols") "100"
   debuggArea         <- UI.div T.#. "debugg" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
   debuggArea2        <- UI.div T.#. "debugg2" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
@@ -248,7 +248,7 @@ zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing)
 
 -- render syntax tree
 makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double Any))
-makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 5 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
+makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 10 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
 
 
@@ -258,7 +258,7 @@ runSDdata (FrmCode str)   = case myparse parseAtom str of
   Right sd -> Just $ const (makeZipper sd)
   Left  _  -> Nothing
 runSDdata (DragCoord cd)  = Just $ \zp@(sd, ctx, tr) -> refactorTree tr cd zp
-runSDdata (Click pt)      = Just $ \sd@(sd1, ctx, tr) -> editZ (createNewDiagram pt sd1) sd
+runSDdata (Click pt)      = Just $ \sd@(sd1, ctx, tr) -> editZ (createNewDiagram (transform (inv tr) pt) sd1) sd
 runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
 
 newCircleCreation :: P2 Double -> SimpleDiagram -> SimpleDiagram
