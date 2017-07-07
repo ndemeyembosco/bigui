@@ -248,7 +248,7 @@ zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing)
 
 -- render syntax tree
 makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double Any))
-makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 4 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
+makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 5 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
 
 
@@ -258,12 +258,18 @@ runSDdata (FrmCode str)   = case myparse parseAtom str of
   Right sd -> Just $ const (makeZipper sd)
   Left  _  -> Nothing
 runSDdata (DragCoord cd)  = Just $ \zp@(sd, ctx, tr) -> refactorTree tr cd zp
-runSDdata (Click pt)      = Just $ \sd -> editZ (newCircleCreation pt) sd
+runSDdata (Click pt)      = Just $ \sd@(sd1, ctx, tr) -> editZ (createNewDiagram pt sd1) sd
 runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
 
 newCircleCreation :: P2 Double -> SimpleDiagram -> SimpleDiagram
 newCircleCreation pt (Pr SEmpty) = createNewCircle pt
 newCircleCreation pt sd          = Atop (createNewCircle pt) sd
+
+createNewDiagram :: P2 Double -> SimpleDiagram -> SimpleDiagram -> SimpleDiagram
+createNewDiagram pt sd1 sd = case sd1 of
+  Pr SEmpty -> createNewCircle pt
+  _         -> Atop (T (Translate (pt .-. origin)) sd1) sd
+
 
 
 -- creating and new circle, to be used on click outside of diagram.
