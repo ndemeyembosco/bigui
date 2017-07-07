@@ -39,8 +39,9 @@ data Primitive where
 
 
 data TransformationEdit where
-  Scale     :: Double    -> TransformationEdit
-  Translate :: V2 Double -> TransformationEdit
+  Scale     :: Double       -> TransformationEdit
+  Translate :: V2 Double    -> TransformationEdit
+  Rotate    :: Double       -> TransformationEdit
   deriving (Show, Eq)
 
 
@@ -50,6 +51,7 @@ data SDCtx where
   Top       :: SDCtx
   ScaleCtx  :: Double         -> SDCtx          -> SDCtx
   TransCtx  :: V2 Double      -> SDCtx          -> SDCtx
+  RotateCtx :: Double         -> SDCtx          -> SDCtx
   AtopLCtx  :: SDCtx          -> SimpleDiagram  -> SDCtx
   AtopRCtx  :: SimpleDiagram  -> SDCtx          -> SDCtx
   IterCtx   :: Int            -> TransformationEdit -> SDCtx -> SDCtx
@@ -65,6 +67,7 @@ upZ :: SDzipper -> SDzipper
 upZ c@(sd, Top, tr)            = c
 upZ (sd, ScaleCtx d ctx, tr)   = (T (Scale d) sd, ctx, tr <> inv (scaling d))
 upZ (sd, TransCtx v ctx, tr)   = (T (Translate v) sd, ctx, tr <> inv (translation v))
+upZ (sd, RotateCtx a ctx, tr)  = (T (Rotate a) sd, ctx, tr <> inv (rotation (a @@ deg)))
 upZ (sd, AtopLCtx ctx sd1, tr) = (Atop sd sd1, ctx, tr)
 upZ (sd, AtopRCtx sd1 ctx, tr) = (Atop sd1 sd, ctx, tr)
 upZ (sd, IterCtx n tra ctx, tr) = (Iterate n tra sd, ctx, tr)
@@ -87,11 +90,12 @@ leftZ loc                        = loc
 
 
 downZ :: SDzipper -> SDzipper
-downZ (Atop l r, ctx, tr)         = (l, AtopLCtx ctx r, tr)   -- by default go left first.
+downZ (Atop l r, ctx, tr)             = (l, AtopLCtx ctx r, tr)   -- by default go left first.
 downZ (T (Scale d) sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
 downZ (T (Translate v) sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
-downZ (Iterate n tra sd, ctx, tr) = (sd, IterCtx n tra ctx, tr)
-downZ loc                         = loc
+downZ (T (Rotate a) sd, ctx, tr)      = (sd, RotateCtx a ctx, tr <> rotation (a @@ deg))
+downZ (Iterate n tra sd, ctx, tr)     = (sd, IterCtx n tra ctx, tr)
+downZ loc                             = loc
 
 
 upmostZ :: SDzipper -> SDzipper
