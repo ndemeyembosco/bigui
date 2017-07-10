@@ -28,6 +28,7 @@ import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Diagrams.Backend.SVG.CmdLine
 import Diagrams.Query
+import qualified Data.Map as M
 
 import qualified Text.Parsec            as P
 import           Text.Parsec.Char
@@ -50,29 +51,22 @@ import           MyParser
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
 
+-- type Env = M.Map String SimpleDiagram
 
-interpSimpleDiagram :: SimpleDiagram -> QDiagram SVG V2 Double Any
-interpSimpleDiagram (Pr pr) = case pr of
+interpSimpleDiagram :: Env -> SimpleDiagram -> QDiagram SVG V2 Double Any
+interpSimpleDiagram e (Pr pr) = case pr of
   SEmpty      -> mempty
   Circle      -> circle 1
   Triangle    -> triangle 1
   Square      -> square 1
   Polygon sds -> regPoly sds 1
-interpSimpleDiagram (Atop sdl sdr) = interpSimpleDiagram sdl `atop` interpSimpleDiagram sdr
-interpSimpleDiagram (T tr sd) = case tr of
-  Scale d       -> interpSimpleDiagram sd # scale d
-  Translate v   -> interpSimpleDiagram sd # translate v
-  Rotate a      -> interpSimpleDiagram sd # rotate (a @@ deg)
-interpSimpleDiagram (Iterate n tra m sd) = case m of
-  Nothing -> case tra of
-      Scale d       -> mconcat $ iterateN n (scale d) (interpSimpleDiagram sd)
-      Translate v   -> mconcat $ iterateN n (translate v) (interpSimpleDiagram sd)
-      Rotate a      -> mconcat $ iterateN n (rotate (a @@ deg)) (interpSimpleDiagram sd)
-  Just t  -> case tra of
-    Scale d         -> let l = iterateN n (scale d) (interpSimpleDiagram sd)  in (mconcat $ deleteDiagFList (t - 1) l)
-    Translate v     -> let l = iterateN n (translate v) (interpSimpleDiagram sd)  in (mconcat $ deleteDiagFList (t - 1) l)
-    Rotate a        -> let l = iterateN n (rotate (a @@ deg)) (interpSimpleDiagram sd) in (mconcat $ deleteDiagFList (t - 1) l)
-interpSimpleDiagram (Cursor sd)      = (interpSimpleDiagram sd  # lw veryThick)
+interpSimpleDiagram e (Atop sdl sdr) = interpSimpleDiagram e sdl `atop` interpSimpleDiagram e sdr
+interpSimpleDiagram e (T tr sd) = interpSimpleDiagram e sd # transform (findTransform tr)
+interpSimpleDiagram e (Iterate n tra m sd) = case m of
+  Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram e sd)
+  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram e sd) in (mconcat $  deleteDiagFList (t - 1) l)
+interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram e sd  # lw veryThick)
+-- interpSimpleDiagram e (Env l)          =
 
 
 
@@ -154,6 +148,7 @@ data SDdata where
   DragCoord :: V2 Double -> SDdata
   Click     :: P2 Double -> SDdata
   Nav       :: DIRECTION -> SDdata
+  Split     :: Int       -> SDdata
   deriving (Show)
 --
 data DIRECTION = LEFT | RIGHT | UP | DOWN
@@ -178,7 +173,13 @@ setup window = void $ mdo
   downButton         <- UI.button T.# T.set T.text "down" # T.set T.style [("width", "50px"), ("height", "20px")]
   leftButton         <- UI.button T.# T.set T.text "left" # T.set T.style [("width", "50px"), ("height", "20px")]
   rightButton        <- UI.button T.# T.set T.text "right" # T.set T.style [("width", "50px"), ("height", "20px")]
-  T.getBody window T.#+ [UI.grid [[UI.column [T.element diagWindow, T.element debuggArea], UI.column [T.element codeArea, UI.row [T.element upButton, T.element downButton], UI.row [T.element leftButton, T.element rightButton], T.element debuggArea2]]]]
+  textfield          <- UI.input T.# T.set (T.attr "type") "text" T.# T.set (T.attr "value") "0"
+  splitTextfield     <- UI.row [UI.string "split: ", T.element textfield]
+  splitButton        <- UI.button T.# T.set T.text "split" # T.set T.style [("width", "50px"), ("height", "20px")]
+  T.getBody window T.#+ [UI.grid [[UI.column [T.element diagWindow, T.element debuggArea]
+                        , UI.column [T.element codeArea, UI.row [T.element upButton, T.element downButton]
+                        , UI.row [T.element leftButton, T.element rightButton], UI.row [T.element splitButton
+                        , T.element splitTextfield], T.element debuggArea2]]]]
   bodyWindow         <- T.getBody window
 
   let
@@ -192,6 +193,9 @@ setup window = void $ mdo
       downClickE          = DOWN  <$ UI.click downButton
       leftClickE          = LEFT  <$ UI.click leftButton
       rightClickE         = RIGHT <$ UI.click rightButton
+      splitClickE         = UI.click splitButton
+      (splitInputE :: T.Event [(Int, String)])        = readInt <$> UI.valueChange textfield
+      -- splitInputE'        = head <$> splitInputE
 
       -- transform point into diagram coordinates and generate cursors events from it
       mousedownTrE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> mousedownE)
@@ -215,6 +219,7 @@ setup window = void $ mdo
   cursorB                                        <- T.stepper mempty cursorE
   mousedownTrB                                   <- T.stepper (makePoint (0, 0)) mousedownTrE
   codeAreaChangedB                               <- T.stepper "" codeAreaE
+  splitInputB                                    <- T.stepper [] splitInputE
 
   let
    -- untransformed and transformed clicking, dragging and scaling events
@@ -234,7 +239,7 @@ setup window = void $ mdo
   {- merge all possible edits to the diagram into one data type
   , run the edits and generate behavior of obtained simpleDiagram -}
 
-      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE
+      (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE splitInputE
       (simpleDiagramE :: T.Event (SDzipper -> SDzipper))              = T.filterJust (runSDdata <$> formedSDdataE)
 
   (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (Pr SEmpty, Top, mempty) simpleDiagramE
@@ -253,7 +258,7 @@ setup window = void $ mdo
 
 
   -- Sink diagram behavior into appropriate gui elements
-  T.element debuggArea2 # T.sink UI.text (show <$> testBehavior)
+  T.element debuggArea2 # T.sink UI.text (show <$> splitInputB)
   -- T.element debuggArea # T.sink UI.text debuggStrB
   T.element diagWindow # T.sink UI.html diagramStrB
   T.element codeArea   # T.sink UI.value codeAreaStrB
@@ -285,6 +290,7 @@ runSDdata (FrmCode str)   = case myparse parseAtom str of
 runSDdata (DragCoord cd)  = Just $ \zp@(sd, ctx, tr) -> refactorTree tr cd zp
 runSDdata (Click pt)      = Just $ \sd@(sd1, ctx, tr) -> editZ (createNewDiagram (transform (inv tr) pt) sd1) sd
 runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
+runSDdata (Split n)  = Just $ \zp -> editZ (splitTree n) zp
 
 newCircleCreation :: P2 Double -> SimpleDiagram -> SimpleDiagram
 newCircleCreation pt (Pr SEmpty) = createNewCircle pt
@@ -301,11 +307,12 @@ createNewDiagram pt sd1 sd = case sd1 of
 createNewCircle :: P2 Double -> SimpleDiagram
 createNewCircle p = T (Translate (p .-. origin)) (Pr Circle)
 
+-- -> T.Event Int
 
 -- merge all different kinds of edits to the diagram into one data type.
 mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double)
-               -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event SDdata
-mergeEvents e1 e2 e3 e4 e5 e6 e7= head <$> T.unions [FrmCode <$> e1, DragCoord <$> e2, Click <$> e3, Nav <$> e4, Nav <$> e5, Nav <$> e6, Nav <$> e7]
+               -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event [(Int, String)] -> T.Event SDdata
+mergeEvents e1 e2 e3 e4 e5 e6 e7 e8 = head <$> T.unions [FrmCode <$> e1, DragCoord <$> e2, Click <$> e3, Nav <$> e4, Nav <$> e5, Nav <$> e6, Nav <$> e7, fmap (\l -> Split $ fst $ head l) e8]
 
 -- turn returned coordinate into point
 makePoint :: (Int, Int) -> P2 Double
@@ -324,6 +331,15 @@ refactorTree'  v  sd                       = T (Translate v) sd
 
 
 
+
+splitTree :: Int -> SimpleDiagram -> SimpleDiagram
+splitTree n zp@(Iterate m tra may sd) = case may of
+  Nothing -> case tra of
+    Scale d     -> (Atop (T (Scale (d^n)) sd) (Iterate n tra (Just n) sd))
+    Translate (V2 v1 v2) -> let m = fromIntegral n in (Atop (T (Translate (V2 (v1*m) (v2*m))) sd) (Iterate n tra (Just n) sd))
+    Rotate a    -> let m = fromIntegral n in (Atop (T (Rotate (a*m)) sd) (Iterate n tra (Just n) sd))
+  Just t  -> undefined
+splitTree n sd                        = sd
 
 {- handle control-key presses -}
 navigateTree :: DIRECTION -> SDzipper -> SDzipper
@@ -373,3 +389,6 @@ pprintTree' n (Iterate m tra may sd) = case may of
 pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
   _             -> "==> " ++ pprintTree' n sd
+
+readInt :: String -> [(Int, String)]
+readInt s = (reads s :: [(Int, String)])

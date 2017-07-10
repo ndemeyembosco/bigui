@@ -13,7 +13,7 @@
 
 module NewSDzipper
     (TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
-    upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ) where
+    upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform) where
 
 import Diagrams.Prelude
 
@@ -22,12 +22,17 @@ type Sides = Int
 
 
 data SimpleDiagram where
-  Cursor   :: SimpleDiagram -> SimpleDiagram
   Pr       :: Primitive      -> SimpleDiagram
+  Cursor   :: SimpleDiagram -> SimpleDiagram
+  -- Env      :: [Var]         -> SimpleDiagram
+  Var      :: String        -> SimpleDiagram
   Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
   T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
   Iterate :: Int            -> TransformationEdit -> Maybe Int -> SimpleDiagram -> SimpleDiagram
   deriving (Show, Eq)
+
+-- data Var where
+--   Assign :: String -> SimpleDiagram -> Var
 
 data Primitive where
   SEmpty   :: Primitive
@@ -45,10 +50,13 @@ data TransformationEdit where
   deriving (Show, Eq)
 
 
-
+-- data VarCtx where
+--   AssignCtx :: String -> SDCtx -> VarCtx
+--   deriving (Show)
 
 data SDCtx where
   Top       :: SDCtx
+  -- EnvCtx    :: [VarCtx]       -> SDCtx
   ScaleCtx  :: Double         -> SDCtx          -> SDCtx
   TransCtx  :: V2 Double      -> SDCtx          -> SDCtx
   RotateCtx :: Double         -> SDCtx          -> SDCtx
@@ -61,7 +69,12 @@ data SDCtx where
 type SDzipper = (SimpleDiagram, SDCtx, T2 Double)  -- add transformations and make this a triple?
 
 
--- findTransform :: TransformationEdit
+findTransform :: TransformationEdit -> T2 Double
+findTransform (Scale d)      = scaling d
+findTransform (Translate v)  = translation v
+findTransform (Rotate a)     = rotation (a @@ deg)
+
+
 
 upZ :: SDzipper -> SDzipper
 upZ c@(sd, Top, tr)            = c
