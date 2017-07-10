@@ -51,29 +51,20 @@ import           MyParser
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
 
--- type Env = M.Map String SimpleDiagram
 
-interpSimpleDiagram :: Env -> SimpleDiagram -> QDiagram SVG V2 Double Any
-interpSimpleDiagram e (Pr pr) = case pr of
+interpSimpleDiagram :: SimpleDiagram -> QDiagram SVG V2 Double Any
+interpSimpleDiagram (Pr pr) = case pr of
   SEmpty      -> mempty
   Circle      -> circle 1
   Triangle    -> triangle 1
   Square      -> square 1
   Polygon sds -> regPoly sds 1
-interpSimpleDiagram e (Atop sdl sdr) = interpSimpleDiagram e sdl `atop` interpSimpleDiagram e sdr
-interpSimpleDiagram e (T tr sd) = interpSimpleDiagram e sd # transform (findTransform tr)
-interpSimpleDiagram e (Iterate n tra m sd) = case m of
-  Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram e sd)
-  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram e sd) in (mconcat $  deleteDiagFList (t - 1) l)
-interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram e sd  # lw veryThick)
--- interpSimpleDiagram e (Env l)          =
-
-
-
--- iterateNSD :: Int -> TransformationEdit -> SimpleDiagram -> [SimpleDiagram]
--- iterateNSD n (Scale d) sd = T (Scale d) sd : iterateNSD (n - 1) (Scale (d+1))
--- iterateNSD n (Translate v) sd =  T (Translate v) sd : iterateNSD (n - 1) (Translate (v ^+^ V2 1.0 0.0))
--- iterateNSD n (Rotate a) sd = undefined
+interpSimpleDiagram (Atop sdl sdr) = interpSimpleDiagram sdl `atop` interpSimpleDiagram sdr
+interpSimpleDiagram (T tr sd) = interpSimpleDiagram  sd # transform (findTransform tr)
+interpSimpleDiagram  (Iterate n tra m sd) = case m of
+  Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram  sd)
+  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  sd) in (mconcat $  deleteDiagFList (t - 1) l)
+interpSimpleDiagram  (Cursor sd)      = (interpSimpleDiagram  sd  # lw veryThick)
 
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
@@ -113,12 +104,7 @@ parseSplit = mybrackets (mysymbol "/" *> myinteger)
 
 parseIterate :: Parser SimpleDiagram
 parseIterate = Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> optionMaybe parseSplit <*> parseAtom
-    -- where
-    --   handleSplit :: Int -> TransformationEdit -> Maybe Int -> SimpleDiagram -> SimpleDiagram
-    --   handleSplit n tra (Just n) sd = -- Iterate n tra (Just n) sd -- turn into atop somehow
-    --   handleSplit n tra Nothing sd  = Iterate n tra Nothing sd
 
---
 parseAtom :: Parser SimpleDiagram
 parseAtom = (Pr Circle) <$ myreserved "circle"
     <|> (Pr Triangle)  <$ myreserved "triangle"
@@ -128,9 +114,8 @@ parseAtom = (Pr Circle) <$ myreserved "circle"
     <|> Atop <$> (myreserved "atop" *> parseAtom) <*> parseAtom
     <|> parseIterate
     <|> myparens parseAtom
-    <|> parseCursor -- <* eof
---
---
+    <|> parseCursor
+
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
 evalExpr' s = case myparse parseAtom s of
   Right sd -> Just (interpSimpleDiagram sd)

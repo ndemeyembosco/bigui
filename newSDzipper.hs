@@ -22,17 +22,12 @@ type Sides = Int
 
 
 data SimpleDiagram where
-  Pr       :: Primitive      -> SimpleDiagram
   Cursor   :: SimpleDiagram -> SimpleDiagram
-  -- Env      :: [Var]         -> SimpleDiagram
-  Var      :: String        -> SimpleDiagram
+  Pr       :: Primitive      -> SimpleDiagram
   Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
   T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
   Iterate :: Int            -> TransformationEdit -> Maybe Int -> SimpleDiagram -> SimpleDiagram
   deriving (Show, Eq)
-
--- data Var where
---   Assign :: String -> SimpleDiagram -> Var
 
 data Primitive where
   SEmpty   :: Primitive
@@ -50,13 +45,10 @@ data TransformationEdit where
   deriving (Show, Eq)
 
 
--- data VarCtx where
---   AssignCtx :: String -> SDCtx -> VarCtx
---   deriving (Show)
+
 
 data SDCtx where
   Top       :: SDCtx
-  -- EnvCtx    :: [VarCtx]       -> SDCtx
   ScaleCtx  :: Double         -> SDCtx          -> SDCtx
   TransCtx  :: V2 Double      -> SDCtx          -> SDCtx
   RotateCtx :: Double         -> SDCtx          -> SDCtx
