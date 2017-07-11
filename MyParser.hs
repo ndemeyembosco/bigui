@@ -24,7 +24,8 @@ import           Data.Functor.Identity
 lexer :: TokenParser u
 lexer = makeTokenParser $
   emptyDef
-   { reservedNames   = ["circle", "scale", "translate", "atop", "(", ",", ")"]}
+   { reservedNames   = ["circle", "scale", "translate", "atop", "(", ",", ")"
+                       , "let", "in", "=", "triangle", "square", "polygon", "iterate", "rotate"]}
 
 myparens :: Parser a -> Parser a
 myparens = parens lexer
