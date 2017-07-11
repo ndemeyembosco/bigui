@@ -66,7 +66,9 @@ interpSimpleDiagram e (Iterate n tra m sd) = case m of
   Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $  deleteDiagFList (t - 1) l)
 interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram  e sd  # lw veryThick)
 interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s sd1 e) sd2
-interpSimpleDiagram e (Var s)          = interpSimpleDiagram e (fromJust $ M.lookup s e)
+interpSimpleDiagram e (Var s)          = case M.lookup s e of
+  Nothing -> mempty
+  Just sd -> interpSimpleDiagram e sd
 
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
@@ -121,6 +123,8 @@ parseAtom = (Pr Circle) <$ myreserved "circle"
     <|> parseIterate
     <|> myparens parseAtom
     <|> parseCursor
+    <|> try (Var <$> ident)
+
 
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
 evalExpr' s = case myparse parseAtom s of
@@ -375,7 +379,7 @@ replicateSp n = foldr (++) [] (replicate n "\t")
 
 pprintTree' ::  Int -> SimpleDiagram -> String
 pprintTree' n (Var s)            = replicateSp n ++ s
-pprintTree' n (Assign s sd1 sd2) = replicateSp n ++ "let " ++ s ++ " = " ++ pprintTree' (n + 1) sd1 ++ " in \n" ++ pprintTree' (n + 1) sd2
+pprintTree' n (Assign s sd1 sd2) = replicateSp n ++ "let " ++ s ++ " = \n" ++ pprintTree' (n + 1) sd1 ++ " in \n" ++ pprintTree' (n + 1) sd2
 pprintTree' n (Pr d)             = replicateSp n ++ (pprintPrim d)
 pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++ "\n" ++  pprintTree' (n + 1) sd
 pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr

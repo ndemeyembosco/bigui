@@ -101,13 +101,15 @@ makeZipper = topZ
 
 
 rightZ :: SDzipper -> SDzipper
-rightZ (sd, AtopLCtx ctx sd1, tr) =  (sd1, AtopRCtx sd ctx, tr)
-rightZ loc                        = loc
+rightZ (sd, AtopLCtx ctx sd1, tr)     =  (sd1, AtopRCtx sd ctx, tr)
+rightZ (sd, AssignVCtx s ctx sd1, tr) =  (sd1, AssignECtx s sd ctx, tr)
+rightZ loc                            = loc
 
 
 leftZ :: SDzipper -> SDzipper
-leftZ (sd, AtopRCtx sd1 ctx, tr) = (sd1, AtopLCtx ctx sd, tr)
-leftZ loc                        = loc
+leftZ (sd, AtopRCtx sd1 ctx, tr)     = (sd1, AtopLCtx ctx sd, tr)
+leftZ (sd, AssignECtx s sd1 ctx, tr) = (sd1, AssignVCtx s ctx sd, tr)
+leftZ loc                            = loc
 
 
 downZ :: SDzipper -> SDzipper
