@@ -52,19 +52,21 @@ import           MyParser
 will also be rendered thicker than others. ---------------------- -}
 
 
-interpSimpleDiagram :: SimpleDiagram -> QDiagram SVG V2 Double Any
-interpSimpleDiagram (Pr pr) = case pr of
+interpSimpleDiagram :: Env -> SimpleDiagram -> QDiagram SVG V2 Double Any
+interpSimpleDiagram e (Pr pr) = case pr of
   SEmpty      -> mempty
   Circle      -> circle 1
   Triangle    -> triangle 1
   Square      -> square 1
   Polygon sds -> regPoly sds 1
-interpSimpleDiagram (Atop sdl sdr) = interpSimpleDiagram sdl `atop` interpSimpleDiagram sdr
-interpSimpleDiagram (T tr sd) = interpSimpleDiagram  sd # transform (findTransform tr)
-interpSimpleDiagram  (Iterate n tra m sd) = case m of
-  Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram  sd)
-  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  sd) in (mconcat $  deleteDiagFList (t - 1) l)
-interpSimpleDiagram  (Cursor sd)      = (interpSimpleDiagram  sd  # lw veryThick)
+interpSimpleDiagram e (Atop sdl sdr) = interpSimpleDiagram e sdl `atop` interpSimpleDiagram e sdr
+interpSimpleDiagram e (T tr sd) = interpSimpleDiagram  e sd # transform (findTransform tr)
+interpSimpleDiagram e (Iterate n tra m sd) = case m of
+  Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd)
+  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $  deleteDiagFList (t - 1) l)
+interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram  e sd  # lw veryThick)
+interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s sd1 e) sd2
+interpSimpleDiagram e (Var s)          = interpSimpleDiagram e (fromJust $ M.lookup s e)
 
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
@@ -102,6 +104,9 @@ parseSplit :: Parser Int
 parseSplit = mybrackets (mysymbol "/" *> myinteger)
 
 
+parseAssign :: Parser SimpleDiagram
+parseAssign = Assign <$> (myreserved "let" *> ident) <*> (myreserved "=" *> parseAtom) <*> (myreserved "in" *> parseAtom)
+
 parseIterate :: Parser SimpleDiagram
 parseIterate = Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> optionMaybe parseSplit <*> parseAtom
 
@@ -111,14 +116,15 @@ parseAtom = (Pr Circle) <$ myreserved "circle"
     <|> (Pr Square)    <$ myreserved "square"
     <|> Pr <$> (Polygon  <$> (myreserved "polygon" *> myinteger))
     <|> T <$> parseTransformEdit <*> parseAtom
-    <|> Atop <$> (myreserved "atop" *> parseAtom) <*> parseAtom
+    <|> Atop <$> (myreserved "atop" *> parseAtom) <*> (parseAtom)
+    <|> parseAssign
     <|> parseIterate
     <|> myparens parseAtom
     <|> parseCursor
 
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
 evalExpr' s = case myparse parseAtom s of
-  Right sd -> Just (interpSimpleDiagram sd)
+  Right sd -> Just (interpSimpleDiagram M.empty sd)
   Left _   -> Nothing
 --
 isCompileReady :: String -> Bool
@@ -180,6 +186,8 @@ setup window = void $ mdo
       rightClickE         = RIGHT <$ UI.click rightButton
       splitClickE         = UI.click splitButton
       (splitInputE :: T.Event [(Int, String)])        = readInt <$> UI.valueChange textfield
+      spaceE              = (==32) <$> UI.keydown codeArea
+
       -- splitInputE'        = head <$> splitInputE
 
       -- transform point into diagram coordinates and generate cursors events from it
@@ -211,6 +219,7 @@ setup window = void $ mdo
       mouseOutE        = fst <$> mouseOutTupleE
       draggingE        = T.whenE ismouseDragB mousemoveE
       mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE)
+      -- codeAreaE'       = T.whenE
     -- merge mousedown event with drag event to avoid jumping when dragging resumes
       unionEventMvDown = T.unionWith const (fst <$> mouseInTupleE) mvPointsE
 
@@ -243,7 +252,7 @@ setup window = void $ mdo
 
 
   -- Sink diagram behavior into appropriate gui elements
-  T.element debuggArea2 # T.sink UI.text (show <$> splitInputB)
+  T.element debuggArea2 # T.sink UI.text (showzip <$> simpleDiagramB')
   -- T.element debuggArea # T.sink UI.text debuggStrB
   T.element diagWindow # T.sink UI.html diagramStrB
   T.element codeArea   # T.sink UI.value codeAreaStrB
@@ -263,7 +272,7 @@ zipE e1 e2 = fmap (\(Just s, Just t) -> (s, t)) (T.unionWith (\(Just p, Nothing)
 
 -- render syntax tree
 makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double Any))
-makeDToDraw sd = let code = interpSimpleDiagram sd # withEnvelope (square 10 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
+makeDToDraw sd = let code = interpSimpleDiagram M.empty sd # withEnvelope (square 10 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
 
 
@@ -365,6 +374,8 @@ replicateSp n = foldr (++) [] (replicate n "\t")
 --- keep track of boolean cursor, put "->" on meeting it.
 
 pprintTree' ::  Int -> SimpleDiagram -> String
+pprintTree' n (Var s)            = replicateSp n ++ s
+pprintTree' n (Assign s sd1 sd2) = replicateSp n ++ "let " ++ s ++ " = " ++ pprintTree' (n + 1) sd1 ++ " in \n" ++ pprintTree' (n + 1) sd2
 pprintTree' n (Pr d)             = replicateSp n ++ (pprintPrim d)
 pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++ "\n" ++  pprintTree' (n + 1) sd
 pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr
