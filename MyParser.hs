@@ -1,7 +1,7 @@
 module MyParser
   ( -- * Lexing
    myparse, myparens, myreserved, myreservedOp,
-   mysymbol, ident, mydouble, myinteger, mywhiteSpace, mybrackets
+   mysymbol, ident, mydouble, myinteger, mywhiteSpace, mybrackets, mysemiSep, mysemiSep1
 
   )
   where
@@ -36,6 +36,12 @@ mybrackets = brackets lexer
 myreserved, myreservedOp :: String -> Parser ()
 myreserved   = reserved lexer
 myreservedOp = reservedOp lexer
+
+mysemiSep :: Parser a -> Parser [a]
+mysemiSep = semiSep lexer
+
+mysemiSep1 :: Parser a -> Parser [a]
+mysemiSep1 = semiSep1 lexer
 
 mysymbol :: String -> Parser String
 mysymbol = symbol lexer
