@@ -51,6 +51,7 @@ import           MyParser
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
 
+type Env   = M.Map String (QDiagram SVG V2 Double Any)
 
 interpSimpleDiagram :: Env -> SimpleDiagram -> QDiagram SVG V2 Double Any
 interpSimpleDiagram e (Pr pr) = case pr of
@@ -65,10 +66,10 @@ interpSimpleDiagram e (Iterate n tra m sd) = case m of
   Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd)
   Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $  deleteDiagFList (t - 1) l)
 interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram  e sd  # lw veryThick)
-interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s sd1 e) sd2
+interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s (interpSimpleDiagram e sd1) e) sd2
 interpSimpleDiagram e (Var s)          = case M.lookup s e of
   Nothing -> mempty
-  Just sd -> interpSimpleDiagram e sd
+  Just sd -> sd
 
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
@@ -135,12 +136,13 @@ parseVarAssigns :: Parser VarAssignments
 parseVarAssigns = mysemiSep1 parseVarAs
 
 
-interpProg :: Prog -> QDiagram SVG V2 Double Any
-interpProg (Prog Nothing sd)   = interpSimpleDiagram M.empty sd
-interpProg (Prog (Just as) sd) = interpSimpleDiagram (interpAssigns as) sd
+interpProg :: Env -> Prog -> QDiagram SVG V2 Double Any
+interpProg e (Prog Nothing sd)   = interpSimpleDiagram e sd
+interpProg e (Prog (Just as) sd) = interpSimpleDiagram (interpAssigns M.empty as) sd
 
-interpAssigns :: VarAssignments -> M.Map String SimpleDiagram
-interpAssigns = M.fromList.fmap (\(VarAs s sd) -> (s, sd))
+interpAssigns :: Env -> VarAssignments -> Env
+interpAssigns e [] = e  --M.fromList.fmap (\(VarAs s sd) -> (s, interpSimpleDiagram M.empty sd))
+interpAssigns e ((VarAs s sd):xs) = interpAssigns (M.insert s (interpSimpleDiagram e sd) e) xs
 
 
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)

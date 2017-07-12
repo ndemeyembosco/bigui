@@ -13,7 +13,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module NewSDzipper
-    (VarAssign(..), VarAssignments, Prog (..), Showzip (..), Env, TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
+    (VarAssign(..), VarAssignments, Prog (..), Showzip (..), TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
     upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform) where
 
 import Diagrams.Prelude
@@ -21,8 +21,6 @@ import qualified Data.Map as M
 
 
 type Sides = Int
-type Env   = M.Map String SimpleDiagram
-
 
 data VarAssign where
   VarAs :: String -> SimpleDiagram -> VarAssign
