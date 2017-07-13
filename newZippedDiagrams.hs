@@ -6,6 +6,8 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 
 
@@ -48,6 +50,106 @@ import           NewSDzipper
 import           MyParser
 -- import           KeyCode
 
+type Assign = (String, SimpleDiagram)
+
+data Prog where
+  PVars  :: [Assign]      -> Prog
+  PSdia  :: SimpleDiagram -> Prog
+  ProgVS :: [Assign]      -> SimpleDiagram -> Prog
+  deriving (Show)
+
+assignParse :: Parser Assign
+assignParse = (,) <$> ident <*> (myreserved "=" *> parseSimpleDiagram)
+
+parseProg :: Parser Prog
+parseProg =  try (ProgVS <$> (mysemiSep1 assignParse <* myreserved "#") <*> parseSimpleDiagram)
+         <|> try (PVars  <$> mysemiSep1 assignParse)
+         <|> PSdia  <$> parseSimpleDiagram
+
+assingInterp :: Env -> Assign -> (String, QDiagram SVG V2 Double Any)
+assingInterp e (s, d) = (s, interpSimpleDiagram e d)
+
+interpVarSection :: Env -> [Assign] -> Env
+interpVarSection e []     = e
+interpVarSection e (x:xs) = let (s, d) = assingInterp e x in interpVarSection (M.insert s d e) xs
+
+interpProg :: Env -> Prog -> QDiagram SVG V2 Double Any
+interpProg e (PVars l)     = interpSimpleDiagram (interpVarSection e l) (Pr SEmpty)
+interpProg e (PSdia sd)    = interpSimpleDiagram e sd
+interpProg e (ProgVS l sd) = let env = interpVarSection e l in interpSimpleDiagram env sd
+
+
+------------------------------------- Prog Zipper --------------------------------------------------
+-- type ProgZipper = (Prog, ProgCtx, T2 Double)
+type ProgZipper = (Either LAssignZipper SDzipper, ProgCtx)
+
+instance Showzip ProgZipper where
+  showzip (Left l, prctx) = "(" ++ show l ++ ", " ++ showzip prctx ++ ")"
+  showzip (Right sdz, prctx) = "(" ++ showzip sdz ++ ", " ++ showzip prctx ++ ")"
+
+type LAssignZipper = (Assign, LAssignCtx)
+type LAssignCtx = ([Assign], [Assign]) -- (above, below)
+
+data ProgCtx where
+  TopP     :: ProgCtx
+  ProgVCtx :: ProgCtx -> SDzipper -> ProgCtx
+  ProgSCtx :: LAssignZipper   -> ProgCtx -> ProgCtx
+  -- deriving Show
+
+instance Showzip ProgCtx where
+  showzip TopP = "TopP"
+  showzip (ProgVCtx prctx sdz) = "ProgVCtx " ++ showzip prctx ++ " " ++ showzip sdz
+  showzip (ProgSCtx l prctx)   = "ProgSCtx " ++ show l ++ " " ++ showzip prctx
+
+leftP :: ProgZipper -> ProgZipper
+leftP (Right sd, ProgSCtx l pctx) = (Left l, ProgVCtx pctx sd)
+
+rightP :: ProgZipper -> ProgZipper
+rightP (Left l, ProgVCtx pctx sd) = (Right sd, ProgSCtx l pctx)
+
+upP :: ProgZipper -> ProgZipper
+upP pr@(Right szp, ProgSCtx l pctx) = leftP pr
+upP pz    = pz
+
+
+
+editZPS :: (SDzipper -> SDzipper) -> ProgZipper -> ProgZipper
+editZPS f (Right sdz, ctx) = (Right (f sdz), ctx)
+
+editZP :: (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper) -> ProgZipper -> ProgZipper
+editZP f (z, pctx)     = (f z, pctx)
+
+
+makeProgZipper :: Prog -> ProgZipper
+makeProgZipper (PVars l)     = (Left (makeLAssignZipper l), TopP)
+makeProgZipper (PSdia sd)    = (Right (makeZipper sd), TopP)
+makeProgZipper (ProgVS l sd) = (Left (makeLAssignZipper l), ProgVCtx TopP (makeZipper sd))
+
+unZipProgZ :: ProgZipper -> Prog
+unZipProgZ prz = case prz of
+  (Right sdz, ProgSCtx l ctx) -> ProgVS (unZipL l) (unZipSD sdz)
+  (Left l, ProgVCtx ctx sd)  -> ProgVS (unZipL l) (unZipSD sd)
+  (Right sdz, TopP)           -> PSdia (unZipSD sdz)
+  (Left lz, TopP)             -> PVars (unZipL lz)
+
+unZipL :: LAssignZipper -> [Assign]
+unZipL (as, (labove, lbelow)) = labove ++ [as] ++ lbelow
+
+makeLAssignZipper :: [Assign] -> LAssignZipper
+makeLAssignZipper l = (head l, ([], tail l))
+
+upLz :: LAssignZipper -> LAssignZipper
+upLz z@(as, (labove, lbelow)) = case labove of
+  []       -> z
+  l@(x:xs) -> (last l, (drop (length l) l, as : lbelow))
+
+downLz :: LAssignZipper -> LAssignZipper
+downLz z@(as, (labove, lbelow)) = case lbelow of
+  []        -> z
+  l@(x:xs)  -> (x, (labove ++ [as], xs))
+
+-- makeProgFunc1 :: (SDzipper -> SDzipper) -> (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper)
+-- makeProgFunc1 f = fmap (\sd -> Right sd) f
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
 
@@ -126,15 +228,15 @@ parseSimpleDiagram = (Pr Circle) <$ myreserved "circle"
     <|> parseCursor
     <|> try (Var <$> ident)
 
-evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
-evalExpr' s = case myparse parseSimpleDiagram s of
-  Right sd -> Just (interpSimpleDiagram M.empty sd)
-  Left _   -> Nothing
-
 -- evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
--- evalExpr' s = case myparse parseProg s of
---   Right pr -> Just (interpProg pr)
+-- evalExpr' s = case myparse parseSimpleDiagram s of
+--   Right sd -> Just (interpSimpleDiagram M.empty sd)
 --   Left _   -> Nothing
+
+evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
+evalExpr' s = case myparse parseProg s of
+  Right pr -> Just (interpProg M.empty pr)
+  Left _   -> Nothing
 --
 isCompileReady :: String -> Bool
 isCompileReady s = case evalExpr' s of
@@ -243,21 +345,25 @@ setup window = void $ mdo
   , run the edits and generate behavior of obtained simpleDiagram -}
 
       (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE splitInputE
-      (simpleDiagramE :: T.Event (SDzipper -> SDzipper))              = T.filterJust (runSDdata <$> formedSDdataE)
+      -- (simpleDiagramE :: T.Event (SDzipper -> SDzipper))              = T.filterJust (runSDdata <$> formedSDdataE)
+      (simpleDiagramE :: T.Event (ProgZipper -> ProgZipper))          = T.filterJust (runSDdata' <$> formedSDdataE)
 
-  (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (Pr SEmpty, Top, mempty) simpleDiagramE
+  -- (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (Pr SEmpty, Top, mempty) simpleDiagramE
+  (simpleDiagramB'  :: T.Behavior ProgZipper)     <- T.accumB (Right (Pr SEmpty, Top, mempty), TopP) simpleDiagramE
   testBehavior                                  <- T.stepper (V2 0.0 0.0) translations
-
 
   let
   -- render diagram
-      simpleDiagramB = unZipSD <$> (editZ Cursor <$> simpleDiagramB')
-      dTupleB        = makeDToDraw <$> simpleDiagramB
+      simpleDiagramB = unZipProgZ <$> (editZPS (editZ Cursor) <$> simpleDiagramB')
+      -- simpleDiagramB = unZipSD <$> (editZ Cursor <$> simpleDiagramB')
+      -- dTupleB        = makeDToDraw <$> simpleDiagramB
+      dTupleB        = makeDToDraw' <$> simpleDiagramB
       diagramStrB    = fmap (\(x, y, z) -> x) dTupleB
       transformB     = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB     = fmap (\(x, y, z) -> z) dTupleB
       -- debuggStrB     = (show <$> simpleDiagramB')
-      codeAreaStrB   = (pprintTree <$> simpleDiagramB)
+      -- codeAreaStrB   = (pprintTree <$> simpleDiagramB)
+      codeAreaStrB   = (pprintProg <$> simpleDiagramB)
 
 
   -- Sink diagram behavior into appropriate gui elements
@@ -284,6 +390,10 @@ makeDToDraw :: SimpleDiagram -> (String, (T2 Double), (QDiagram SVG V2 Double An
 makeDToDraw sd = let code = interpSimpleDiagram M.empty sd # withEnvelope (square 10 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
 
+makeDToDraw' :: Prog -> (String, (T2 Double), (QDiagram SVG V2 Double Any))
+makeDToDraw' pr = let code = interpProg M.empty pr # withEnvelope (square 10 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
+
+
 
 -- handle different kinds of edits to the diagram
 runSDdata :: SDdata -> Maybe (SDzipper -> SDzipper)
@@ -294,6 +404,26 @@ runSDdata (DragCoord cd)  = Just $ \zp@(sd, ctx, tr) -> refactorTree tr cd zp
 runSDdata (Click pt)      = Just $ \sd@(sd1, ctx, tr) -> editZ (createNewDiagram (transform (inv tr) pt) sd1) sd
 runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
 runSDdata (Split n)  = Just $ \zp -> editZ (splitTree n) zp
+
+
+runSDdata' :: SDdata -> Maybe (ProgZipper -> ProgZipper)
+runSDdata' (FrmCode str)   = case myparse parseProg str of
+  Right sd -> Just $ const (makeProgZipper sd)
+  Left  _  -> Nothing
+runSDdata' (DragCoord cd)  = Just $ \zp@(sd, ctx) -> case sd of
+  Right (_, _, tr) -> editZPS (refactorTree tr cd) zp
+  Left _  -> undefined
+runSDdata' (Click pt)      = Just $ \sd@(sd1, ctx) -> case sd1 of
+  Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform (inv tr1) pt) sd2) in editZPS func sd
+  Left _ -> undefined
+runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
+  Right _ -> editZPS (navigateTree k) zp
+  Left _  -> undefined
+runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
+  Right (sdz, _ , _) -> let func = editZ (splitTree n) in editZPS func zp
+  Left _  -> undefined
+
+
 
 newCircleCreation :: P2 Double -> SimpleDiagram -> SimpleDiagram
 newCircleCreation pt (Pr SEmpty) = createNewCircle pt
@@ -326,6 +456,8 @@ makePoint (x, y) = p2 (fromIntegral x, fromIntegral y)
 
 refactorTree :: T2 Double -> V2 Double -> SDzipper -> SDzipper
 refactorTree tr v sz = editZ (refactorTree' (transform (inv tr) v)) sz   -- use inv transformations
+
+
 
 refactorTree' :: V2 Double -> SimpleDiagram -> SimpleDiagram
 refactorTree'  p (T (Translate v) sd)          = T (Translate (p ^+^ v)) sd
@@ -393,8 +525,17 @@ pprintTree' n (Iterate m tra may sd) = case may of
   Just t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ show t ++ "]" ++ "\n"  ++  pprintTree' (n + 1) sd
 pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
-  _             -> "==> " ++ pprintTree' n sd
+  -- _             -> "==> " ++ pprintTree' n sd
+  _             -> pprintTree' n sd
 
 
 readInt :: String -> [(Int, String)]
 readInt s = (reads s :: [(Int, String)])
+
+pprintAssign :: Assign -> String
+pprintAssign (s, sd) = s ++ " = " ++ pprintTree sd ++ ";"
+
+pprintProg :: Prog -> String
+pprintProg (PVars l)      = unlines $ fmap pprintAssign l
+pprintProg (PSdia sd)     = pprintTree sd
+pprintProg (ProgVS l sd)  = (unlines $ fmap pprintAssign l) ++ "\n # \n" ++ pprintTree sd

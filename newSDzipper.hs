@@ -23,6 +23,8 @@ import qualified Data.Map as M
 type Sides = Int
 
 
+
+
 data SimpleDiagram where
   Assign   :: String        -> SimpleDiagram -> SimpleDiagram -> SimpleDiagram
   Var      :: String        -> SimpleDiagram
@@ -118,8 +120,7 @@ downZ (Assign s sd1 sd2, ctx, tr)     = (sd1, AssignVCtx s ctx sd2, tr)
 downZ (T (Scale d) sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
 downZ (T (Translate v) sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
 downZ (T (Rotate a) sd, ctx, tr)      = (sd, RotateCtx a ctx, tr <> rotation (a @@ deg))
--- downZ (Assign s sd sd1, ctx, tr)          = (sd, AssignVCtx s ctx sd1, tr)
-downZ (Iterate n tra m sd, ctx, tr)     = (sd, IterCtx n tra m ctx, tr)
+downZ (Iterate n tra m sd, ctx, tr)   = (sd, IterCtx n tra m ctx, tr)
 downZ loc                             = loc
 
 
