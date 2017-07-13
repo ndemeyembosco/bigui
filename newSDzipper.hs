@@ -13,7 +13,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module NewSDzipper
-    (VarAssign(..), VarAssignments, Prog (..), Showzip (..), TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
+    (Showzip (..), TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
     upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform) where
 
 import Diagrams.Prelude
@@ -21,16 +21,6 @@ import qualified Data.Map as M
 
 
 type Sides = Int
-
-data VarAssign where
-  VarAs :: String -> SimpleDiagram -> VarAssign
-  deriving (Show)
-
-type VarAssignments = [VarAssign]
-
-
-data Prog = Prog (Maybe VarAssignments) SimpleDiagram
-   deriving (Show)
 
 
 data SimpleDiagram where
@@ -73,22 +63,9 @@ data SDCtx where
   IterCtx   :: Int            -> TransformationEdit -> Maybe Int -> SDCtx -> SDCtx
   deriving (Show)
 
-data PrgCtx where
-  TopP    :: PrgCtx
-  VarASCtx  :: VarAsCtx -> SimpleDiagram -> PrgCtx
-  SDCtx   :: (Maybe VarAssignments) -> SDCtx -> PrgCtx
-  deriving (Show)
 
 
-
-data VarAsCtx where
-  AgCtx :: String -> SDCtx -> VarAsCtx
-  deriving (Show)
-
-type VarAsZipper = (SimpleDiagram, VarAsCtx)
-type PrgZipper   = (Either VarAssignments SimpleDiagram, PrgCtx)
-
-type SDzipper = (SimpleDiagram, SDCtx, T2 Double)  -- add transformations and make this a triple?
+type SDzipper = (SimpleDiagram, SDCtx, T2 Double)            -- add transformations and make this a triple?
 
 class Showzip a where
   showzip :: a -> String

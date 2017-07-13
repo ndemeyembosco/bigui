@@ -126,25 +126,6 @@ parseSimpleDiagram = (Pr Circle) <$ myreserved "circle"
     <|> parseCursor
     <|> try (Var <$> ident)
 
-parseProg :: Parser Prog
-parseProg = Prog <$> optionMaybe parseVarAssigns <*> parseSimpleDiagram
-
-parseVarAs :: Parser VarAssign
-parseVarAs = VarAs <$> ident <*> parseSimpleDiagram
-
-parseVarAssigns :: Parser VarAssignments
-parseVarAssigns = mysemiSep1 parseVarAs
-
-
-interpProg :: Env -> Prog -> QDiagram SVG V2 Double Any
-interpProg e (Prog Nothing sd)   = interpSimpleDiagram e sd
-interpProg e (Prog (Just as) sd) = interpSimpleDiagram (interpAssigns M.empty as) sd
-
-interpAssigns :: Env -> VarAssignments -> Env
-interpAssigns e [] = e  --M.fromList.fmap (\(VarAs s sd) -> (s, interpSimpleDiagram M.empty sd))
-interpAssigns e ((VarAs s sd):xs) = interpAssigns (M.insert s (interpSimpleDiagram e sd) e) xs
-
-
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
 evalExpr' s = case myparse parseSimpleDiagram s of
   Right sd -> Just (interpSimpleDiagram M.empty sd)
@@ -414,16 +395,6 @@ pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
   _             -> "==> " ++ pprintTree' n sd
 
-pprintProg :: Prog -> String
-pprintProg = pprintProg' 0
-
-
-pprintProg' :: Int -> Prog -> String
-pprintProg' n (Prog Nothing sd)   = pprintTree' n sd
-pprintProg' n (Prog (Just as) sd) = pprintAssigns as ++ "\n" ++ pprintTree' n sd
-
-pprintAssigns :: VarAssignments -> String
-pprintAssigns = show.fmap (\l -> show l ++ ";\n")
 
 readInt :: String -> [(Int, String)]
 readInt s = (reads s :: [(Int, String)])
