@@ -128,7 +128,7 @@ makeProgZipper (ProgVS l sd) = (Left (makeLAssignZipper l), ProgVCtx TopP (makeZ
 unZipProgZ :: ProgZipper -> Prog
 unZipProgZ prz = case prz of
   (Right sdz, ProgSCtx l ctx) -> ProgVS (unZipL l) (unZipSD sdz)
-  (Left l, ProgVCtx ctx sd)  -> ProgVS (unZipL l) (unZipSD sd)
+  (Left l, ProgVCtx ctx sd)   -> ProgVS (unZipL l) (unZipSD sd)
   (Right sdz, TopP)           -> PSdia (unZipSD sdz)
   (Left lz, TopP)             -> PVars (unZipL lz)
 
@@ -176,8 +176,8 @@ interpSimpleDiagram e (Var s)          = case M.lookup s e of
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
 
-atopify :: [QDiagram SVG V2 Double Any] -> QDiagram SVG V2 Double Any
-atopify = foldr (\sd1 sd2 -> atop sd1 sd2) mempty
+-- atopify :: [QDiagram SVG V2 Double Any] -> QDiagram SVG V2 Double Any
+-- atopify = foldr (\sd1 sd2 -> atop sd1 sd2) mempty
 
 parseSVG :: String -> String
 parseSVG [] = []
@@ -350,7 +350,7 @@ setup window = void $ mdo
 
   -- (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (Pr SEmpty, Top, mempty) simpleDiagramE
   (simpleDiagramB'  :: T.Behavior ProgZipper)     <- T.accumB (Right (Pr SEmpty, Top, mempty), TopP) simpleDiagramE
-  testBehavior                                  <- T.stepper (V2 0.0 0.0) translations
+  testBehavior                                    <- T.stepper (V2 0.0 0.0) translations
 
   let
   -- render diagram
@@ -414,7 +414,7 @@ runSDdata' (DragCoord cd)  = Just $ \zp@(sd, ctx) -> case sd of
   Right (_, _, tr) -> editZPS (refactorTree tr cd) zp
   Left _  -> undefined
 runSDdata' (Click pt)      = Just $ \sd@(sd1, ctx) -> case sd1 of
-  Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform (inv tr1) pt) sd2) in editZPS func sd
+  Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform tr1 pt) sd2) in editZPS func sd
   Left _ -> undefined
 runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
   Right _ -> editZPS (navigateTree k) zp
