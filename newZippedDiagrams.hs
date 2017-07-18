@@ -62,8 +62,8 @@ assignParse :: Parser Assign
 assignParse = (,) <$> ident <*> (myreserved "=" *> parseSimpleDiagram)
 
 parseProg :: Parser Prog
-parseProg =  try (ProgVS <$> (mysemiSep1 assignParse <* myreserved "#") <*> parseSimpleDiagram)
-         <|> try (PVars  <$> mysemiSep1 assignParse)
+parseProg =  try (ProgVS <$> (myreserved "#" *> mysemiSep1 assignParse <* myreserved "#") <*> parseSimpleDiagram)
+         <|> try (PVars  <$> (myreserved "#" *> mysemiSep1 assignParse <* myreserved "#"))
          <|> PSdia  <$> parseSimpleDiagram
 
 assingInterp :: Env -> Assign -> (String, QDiagram SVG V2 Double Any)
@@ -123,7 +123,7 @@ editZP f (z, pctx)     = (f z, pctx)
 makeProgZipper :: Prog -> ProgZipper
 makeProgZipper (PVars l)     = (Left (makeLAssignZipper l), TopP)
 makeProgZipper (PSdia sd)    = (Right (makeZipper sd), TopP)
-makeProgZipper (ProgVS l sd) = (Left (makeLAssignZipper l), ProgVCtx TopP (makeZipper sd))
+makeProgZipper (ProgVS l sd) = (Right (makeZipper sd), ProgSCtx (makeLAssignZipper l) TopP)
 
 unZipProgZ :: ProgZipper -> Prog
 unZipProgZ prz = case prz of
@@ -221,7 +221,7 @@ parseSimpleDiagram = (Pr Circle) <$ myreserved "circle"
     <|> (Pr Square)    <$ myreserved "square"
     <|> Pr <$> (Polygon  <$> (myreserved "polygon" *> myinteger))
     <|> T <$> parseTransformEdit <*> parseSimpleDiagram
-    <|> Atop <$> (myreserved "atop" *> parseSimpleDiagram) <*> (parseSimpleDiagram)
+    <|> try (Atop <$> (myreserved "atop" *> parseSimpleDiagram) <*> (parseSimpleDiagram))
     <|> parseAssign
     <|> parseIterate
     <|> myparens parseSimpleDiagram
@@ -393,7 +393,8 @@ makeDToDraw sd = let code = interpSimpleDiagram M.empty sd # withEnvelope (squar
 makeDToDraw' :: Prog -> (String, (T2 Double), (QDiagram SVG V2 Double Any))
 makeDToDraw' pr = let code = interpProg M.empty pr # withEnvelope (square 10 :: Diagram B) in let (tr, svgStr) = renderedString' code in (parseSVG $ svgStr, tr, code)
 
-
+tripleFst :: (a, b, c) -> a
+tripleFst (a, b, c) = a
 
 -- handle different kinds of edits to the diagram
 runSDdata :: SDdata -> Maybe (SDzipper -> SDzipper)
@@ -412,16 +413,16 @@ runSDdata' (FrmCode str)   = case myparse parseProg str of
   Left  _  -> Nothing
 runSDdata' (DragCoord cd)  = Just $ \zp@(sd, ctx) -> case sd of
   Right (_, _, tr) -> editZPS (refactorTree tr cd) zp
-  Left _  -> undefined
+  Left _  -> zp
 runSDdata' (Click pt)      = Just $ \sd@(sd1, ctx) -> case sd1 of
   Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform tr1 pt) sd2) in editZPS func sd
-  Left _ -> undefined
+  Left _ -> sd
 runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
   Right _ -> editZPS (navigateTree k) zp
-  Left _  -> undefined
+  Left _  -> zp
 runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
   Right (sdz, _ , _) -> let func = editZ (splitTree n) in editZPS func zp
-  Left _  -> undefined
+  Left _  -> zp
 
 
 
