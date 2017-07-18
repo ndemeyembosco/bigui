@@ -62,9 +62,10 @@ assignParse :: Parser Assign
 assignParse = (,) <$> ident <*> (myreserved "=" *> parseSimpleDiagram)
 
 parseProg :: Parser Prog
-parseProg =  try (ProgVS <$> (myreserved "#" *> mysemiSep1 assignParse <* myreserved "#") <*> parseSimpleDiagram)
-         <|> try (PVars  <$> (myreserved "#" *> mysemiSep1 assignParse <* myreserved "#"))
+parseProg =  try (ProgVS <$> (myreserved "#" *> (mysemiSep1 assignParse) <* myreserved "#") <*> parseSimpleDiagram)
          <|> PSdia  <$> parseSimpleDiagram
+         <|> try (PVars  <$> (myreserved "#" *> (mysemiSep1 assignParse)  <* myreserved "#") <* eof)
+
 
 assingInterp :: Env -> Assign -> (String, QDiagram SVG V2 Double Any)
 assingInterp e (s, d) = (s, interpSimpleDiagram e d)
@@ -115,6 +116,8 @@ upP pz    = pz
 
 editZPS :: (SDzipper -> SDzipper) -> ProgZipper -> ProgZipper
 editZPS f (Right sdz, ctx) = (Right (f sdz), ctx)
+editZPS f (Left l, ProgVCtx pctx sdz) = (Right (f sdz), ProgSCtx l pctx)
+editZPS f z                           = z 
 
 editZP :: (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper) -> ProgZipper -> ProgZipper
 editZP f (z, pctx)     = (f z, pctx)
@@ -129,8 +132,8 @@ unZipProgZ :: ProgZipper -> Prog
 unZipProgZ prz = case prz of
   (Right sdz, ProgSCtx l ctx) -> ProgVS (unZipL l) (unZipSD sdz)
   (Left l, ProgVCtx ctx sd)   -> ProgVS (unZipL l) (unZipSD sd)
-  (Right sdz, TopP)           -> PSdia (unZipSD sdz)
-  (Left lz, TopP)             -> PVars (unZipL lz)
+  (Right sdz, TopP)           -> PSdia (unZipSD sdz)  -- probably wrong?
+  (Left lz, TopP)             -> PVars (unZipL lz)    -- probably wrong?
 
 unZipL :: LAssignZipper -> [Assign]
 unZipL (as, (labove, lbelow)) = labove ++ [as] ++ lbelow
@@ -141,15 +144,13 @@ makeLAssignZipper l = (head l, ([], tail l))
 upLz :: LAssignZipper -> LAssignZipper
 upLz z@(as, (labove, lbelow)) = case labove of
   []       -> z
-  l@(x:xs) -> (last l, (drop (length l) l, as : lbelow))
+  l@(x:xs) -> (last l, (drop ((length l) - 1) l, as : lbelow))
 
 downLz :: LAssignZipper -> LAssignZipper
 downLz z@(as, (labove, lbelow)) = case lbelow of
   []        -> z
   l@(x:xs)  -> (x, (labove ++ [as], xs))
 
--- makeProgFunc1 :: (SDzipper -> SDzipper) -> (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper)
--- makeProgFunc1 f = fmap (\sd -> Right sd) f
 {- ------------- set all other parts of diagram to false execpt those under the cursor, which
 will also be rendered thicker than others. ---------------------- -}
 
@@ -240,8 +241,8 @@ evalExpr' s = case myparse parseProg s of
 --
 isCompileReady :: String -> Bool
 isCompileReady s = case evalExpr' s of
-  Nothing -> False
-  Just _  -> True
+  Nothing      -> False
+  Just _       -> True
 --
 -- ---------------------------------------------------------------------------------------
 --
@@ -287,7 +288,7 @@ setup window = void $ mdo
   let
 
   -- Track all user input events
-      codeAreaE           = UI.valueChange codeArea
+      codeAreaE           = T.filterE isCompileReady (UI.valueChange codeArea)
       mouseUpE            = UI.mouseup diagWindow
       mousedownE          = UI.mousedown diagWindow
       mousemoveE          = UI.mousemove diagWindow
@@ -536,7 +537,12 @@ readInt s = (reads s :: [(Int, String)])
 pprintAssign :: Assign -> String
 pprintAssign (s, sd) = s ++ " = " ++ pprintTree sd ++ ";"
 
+
+pprintLAssign :: [Assign] -> String
+pprintLAssign l = unlines (fmap pprintAssign (reverse $ tail $ reverse l)) ++ ((\(s, sd) -> s ++ " = " ++ pprintTree sd) (last l))
+
+
 pprintProg :: Prog -> String
-pprintProg (PVars l)      = unlines $ fmap pprintAssign l
+pprintProg (PVars l)      = "# \n" ++ pprintLAssign l ++ " #"
 pprintProg (PSdia sd)     = pprintTree sd
-pprintProg (ProgVS l sd)  = (unlines $ fmap pprintAssign l) ++ "\n # \n" ++ pprintTree sd
+pprintProg (ProgVS l sd)  = "# \n" ++ pprintLAssign l ++ "\n # \n" ++ pprintTree sd
