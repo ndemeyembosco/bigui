@@ -161,9 +161,7 @@ interpSimpleDiagram e (Pr pr) = case pr of
   Polygon sds -> regPoly sds 1
 interpSimpleDiagram e (Atop sdl sdr) = interpSimpleDiagram e sdl `atop` interpSimpleDiagram e sdr
 interpSimpleDiagram e (T tr sd) = interpSimpleDiagram  e sd # transform (findTransform tr)
-interpSimpleDiagram e (Iterate n tra m sd) = case m of
-  Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd)
-  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $ deleteLDiagFList t l)
+interpSimpleDiagram e (Iterate n tra m sd) = let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $ deleteLDiagFList m l)
 interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram  e sd  # lw veryThick)
 interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s (interpSimpleDiagram e sd1) e) sd2
 interpSimpleDiagram e (Var s)          = case M.lookup s e of
@@ -210,7 +208,10 @@ parseAssign :: Parser SimpleDiagram
 parseAssign = Assign <$> (myreserved "let" *> ident) <*> (myreserved "=" *> parseSimpleDiagram) <*> (myreserved "in" *> parseSimpleDiagram)
 
 parseIterate :: Parser SimpleDiagram
-parseIterate = Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> optionMaybe parseSplit <*> parseSimpleDiagram
+parseIterate = Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> (handleSplit <$> optionMaybe parseSplit) <*> parseSimpleDiagram
+        where
+          handleSplit Nothing  = []
+          handleSplit (Just l) = l
 
 parseSimpleDiagram :: Parser SimpleDiagram
 parseSimpleDiagram = (Pr Circle) <$ myreserved "circle"
@@ -445,9 +446,7 @@ splitTransFormHelper n (Translate (V2 v1 v2)) = let m = fromIntegral n in Transl
 splitTransFormHelper n (Rotate a) = let m = fromIntegral n in Rotate (a*m)
 
 splitTree' :: Int -> SimpleDiagram -> SimpleDiagram
-splitTree' n zp@(Iterate m tra may sd) = case may of
-  Nothing -> Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra (Just [n]) sd)
-  Just t  -> if n `elem` t then zp else Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra (Just (n : t)) sd)
+splitTree' n zp@(Iterate m tra t sd) = if n `elem` t then zp else Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra ((n : t)) sd)
 splitTree' n sd                        = sd
 
 splitTree :: [Int] -> SimpleDiagram -> SimpleDiagram
@@ -471,13 +470,15 @@ generateNewName l = "x" ++ show ((maximum $ fmap (\s -> (read $ tail s) :: Integ
 
 splitProgZipper :: Int -> ProgZipper -> ProgZipper
 splitProgZipper n prz = case prz of
-  (Right (Iterate m tra may sd, ctx1, tr), ProgSCtx l ctx) -> case may of
-    Nothing -> let name = generateNewName (unZipL l) in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just [n]) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((name, sd) : (unZipL l))) ctx)
-    Just t  -> if n `elem` t then prz else let name = generateNewName (unZipL l) in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((name, sd) : (unZipL l))) ctx)
-  (Right (Iterate m tra may sd, ctx1, tr), TopP)           -> case may of
-    Nothing -> let name = generateNewName [] in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just [n]) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
-    Just t  -> if n `elem` t then prz else let name = generateNewName [] in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
-  pzi                                                  -> pzi
+  (Right (Iterate m tra t sd, ctx1, tr), ProgSCtx l ctx) -> if n `elem` t then prz
+                                                              else let name = generateNewName (unZipL l)
+                                                                       in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
+                                                                           (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((unZipL l) ++ [(name, sd)])) ctx)
+  (Right (Iterate m tra t sd, ctx1, tr), TopP)           -> if n `elem` t then prz
+                                                              else let name = generateNewName []
+                                                                     in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
+                                                                         (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
+  pzi                                                   -> pzi
 
 
 
@@ -534,8 +535,8 @@ pprintTree' n (Pr d)             = replicateSp n ++ (pprintPrim d)
 pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++ "\n" ++  pprintTree' (n + 1) sd
 pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr
 pprintTree' n (Iterate m tra may sd) = case may of
-  Nothing -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ "\n"  ++  pprintTree' (n + 1) sd
-  Just t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ pprintNList t ++ "\n"  ++  pprintTree' (n + 1) sd
+  [] -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ "\n"  ++  pprintTree' (n + 1) sd
+  t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ pprintNList t ++ "\n"  ++  pprintTree' (n + 1) sd
 pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
   _             -> "==> " ++ pprintTree' n sd

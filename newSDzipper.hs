@@ -32,7 +32,7 @@ data SimpleDiagram where
   Pr       :: Primitive      -> SimpleDiagram
   Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
   T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
-  Iterate :: Int            -> TransformationEdit -> Maybe [Int] -> SimpleDiagram -> SimpleDiagram
+  Iterate :: Int            -> TransformationEdit -> [Int] -> SimpleDiagram -> SimpleDiagram
   deriving (Show, Eq)
 
 data Primitive where
@@ -62,7 +62,7 @@ data SDCtx where
   AtopRCtx  :: SimpleDiagram  -> SDCtx          -> SDCtx
   AssignVCtx :: String         -> SDCtx         -> SimpleDiagram -> SDCtx
   AssignECtx :: String         -> SimpleDiagram -> SDCtx         -> SDCtx
-  IterCtx   :: Int            -> TransformationEdit -> Maybe [Int] -> SDCtx -> SDCtx
+  IterCtx   :: Int            -> TransformationEdit -> [Int] -> SDCtx -> SDCtx
   deriving (Show)
 
 
