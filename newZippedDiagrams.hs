@@ -48,7 +48,6 @@ import           Data.IORef
 import           Control.Monad.IO.Class
 import           NewSDzipper
 import           MyParser
--- import           KeyCode
 
 type Assign = (String, SimpleDiagram)
 
@@ -81,7 +80,6 @@ interpProg e (ProgVS l sd) = let env = interpVarSection e l in interpSimpleDiagr
 
 
 ------------------------------------- Prog Zipper --------------------------------------------------
--- type ProgZipper = (Prog, ProgCtx, T2 Double)
 type ProgZipper = (Either LAssignZipper SDzipper, ProgCtx)
 
 instance Showzip ProgZipper where
@@ -95,7 +93,6 @@ data ProgCtx where
   TopP     :: ProgCtx
   ProgVCtx :: ProgCtx -> SDzipper -> ProgCtx
   ProgSCtx :: LAssignZipper   -> ProgCtx -> ProgCtx
-  -- deriving Show
 
 instance Showzip ProgCtx where
   showzip TopP = "TopP"
@@ -117,7 +114,7 @@ upP pz    = pz
 editZPS :: (SDzipper -> SDzipper) -> ProgZipper -> ProgZipper
 editZPS f (Right sdz, ctx) = (Right (f sdz), ctx)
 editZPS f (Left l, ProgVCtx pctx sdz) = (Right (f sdz), ProgSCtx l pctx)
-editZPS f z                           = z 
+editZPS f z                           = z
 
 editZP :: (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper) -> ProgZipper -> ProgZipper
 editZP f (z, pctx)     = (f z, pctx)
@@ -151,8 +148,6 @@ downLz z@(as, (labove, lbelow)) = case lbelow of
   []        -> z
   l@(x:xs)  -> (x, (labove ++ [as], xs))
 
-{- ------------- set all other parts of diagram to false execpt those under the cursor, which
-will also be rendered thicker than others. ---------------------- -}
 
 type Env   = M.Map String (QDiagram SVG V2 Double Any)
 
@@ -176,9 +171,6 @@ interpSimpleDiagram e (Var s)          = case M.lookup s e of
 
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
-
--- atopify :: [QDiagram SVG V2 Double Any] -> QDiagram SVG V2 Double Any
--- atopify = foldr (\sd1 sd2 -> atop sd1 sd2) mempty
 
 parseSVG :: String -> String
 parseSVG [] = []
@@ -300,8 +292,6 @@ setup window = void $ mdo
       (splitInputE :: T.Event [(Int, String)])        = readInt <$> UI.valueChange textfield
       spaceE              = (==32) <$> UI.keydown codeArea
 
-      -- splitInputE'        = head <$> splitInputE
-
       -- transform point into diagram coordinates and generate cursors events from it
       mousedownTrE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> mousedownE)
       cursorE             = sample    <$> q2DiagramB           T.<@> mousedownTrE
@@ -346,24 +336,18 @@ setup window = void $ mdo
   , run the edits and generate behavior of obtained simpleDiagram -}
 
       (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE splitInputE
-      -- (simpleDiagramE :: T.Event (SDzipper -> SDzipper))              = T.filterJust (runSDdata <$> formedSDdataE)
       (simpleDiagramE :: T.Event (ProgZipper -> ProgZipper))          = T.filterJust (runSDdata' <$> formedSDdataE)
 
-  -- (simpleDiagramB'  :: T.Behavior SDzipper)     <- T.accumB (Pr SEmpty, Top, mempty) simpleDiagramE
   (simpleDiagramB'  :: T.Behavior ProgZipper)     <- T.accumB (Right (Pr SEmpty, Top, mempty), TopP) simpleDiagramE
   testBehavior                                    <- T.stepper (V2 0.0 0.0) translations
 
   let
   -- render diagram
       simpleDiagramB = unZipProgZ <$> (editZPS (editZ Cursor) <$> simpleDiagramB')
-      -- simpleDiagramB = unZipSD <$> (editZ Cursor <$> simpleDiagramB')
-      -- dTupleB        = makeDToDraw <$> simpleDiagramB
       dTupleB        = makeDToDraw' <$> simpleDiagramB
       diagramStrB    = fmap (\(x, y, z) -> x) dTupleB
       transformB     = fmap (\(x, y, z) -> y) dTupleB
       q2DiagramB     = fmap (\(x, y, z) -> z) dTupleB
-      -- debuggStrB     = (show <$> simpleDiagramB')
-      -- codeAreaStrB   = (pprintTree <$> simpleDiagramB)
       codeAreaStrB   = (pprintProg <$> simpleDiagramB)
 
 
@@ -396,17 +380,6 @@ makeDToDraw' pr = let code = interpProg M.empty pr # withEnvelope (square 10 :: 
 
 tripleFst :: (a, b, c) -> a
 tripleFst (a, b, c) = a
-
--- handle different kinds of edits to the diagram
-runSDdata :: SDdata -> Maybe (SDzipper -> SDzipper)
-runSDdata (FrmCode str)   = case myparse parseSimpleDiagram str of
-  Right sd -> Just $ const (makeZipper sd)
-  Left  _  -> Nothing
-runSDdata (DragCoord cd)  = Just $ \zp@(sd, ctx, tr) -> refactorTree tr cd zp
-runSDdata (Click pt)      = Just $ \sd@(sd1, ctx, tr) -> editZ (createNewDiagram (transform (inv tr) pt) sd1) sd
-runSDdata (Nav k)  = Just $ \zp -> navigateTree k zp
-runSDdata (Split n)  = Just $ \zp -> editZ (splitTree n) zp
-
 
 runSDdata' :: SDdata -> Maybe (ProgZipper -> ProgZipper)
 runSDdata' (FrmCode str)   = case myparse parseProg str of
@@ -441,8 +414,6 @@ createNewDiagram pt sd1 sd = case sd1 of
 -- creating and new circle, to be used on click outside of diagram.
 createNewCircle :: P2 Double -> SimpleDiagram
 createNewCircle p = T (Translate (p .-. origin)) (Pr Circle)
-
--- -> T.Event Int
 
 -- merge all different kinds of edits to the diagram into one data type.
 mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double)
@@ -527,8 +498,7 @@ pprintTree' n (Iterate m tra may sd) = case may of
   Just t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ show t ++ "]" ++ "\n"  ++  pprintTree' (n + 1) sd
 pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
-  -- _             -> "==> " ++ pprintTree' n sd
-  _             -> pprintTree' n sd
+  _             -> "==> " ++ pprintTree' n sd
 
 
 readInt :: String -> [(Int, String)]
