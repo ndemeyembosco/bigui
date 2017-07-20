@@ -13,7 +13,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module NewSDzipper
-    (Showzip (..), Env, TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
+    (Showzip (..), TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper, upZ, leftZ, rightZ,
     upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform) where
 
 import Diagrams.Prelude
@@ -21,7 +21,8 @@ import qualified Data.Map as M
 
 
 type Sides = Int
-type Env   = M.Map String SimpleDiagram
+
+
 
 
 data SimpleDiagram where
@@ -31,7 +32,7 @@ data SimpleDiagram where
   Pr       :: Primitive      -> SimpleDiagram
   Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
   T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
-  Iterate :: Int            -> TransformationEdit -> Maybe Int -> SimpleDiagram -> SimpleDiagram
+  Iterate :: Int            -> TransformationEdit -> [Int] -> SimpleDiagram -> SimpleDiagram
   deriving (Show, Eq)
 
 data Primitive where
@@ -61,11 +62,12 @@ data SDCtx where
   AtopRCtx  :: SimpleDiagram  -> SDCtx          -> SDCtx
   AssignVCtx :: String         -> SDCtx         -> SimpleDiagram -> SDCtx
   AssignECtx :: String         -> SimpleDiagram -> SDCtx         -> SDCtx
-  IterCtx   :: Int            -> TransformationEdit -> Maybe Int -> SDCtx -> SDCtx
+  IterCtx   :: Int            -> TransformationEdit -> [Int] -> SDCtx -> SDCtx
   deriving (Show)
 
 
-type SDzipper = (SimpleDiagram, SDCtx, T2 Double)  -- add transformations and make this a triple?
+
+type SDzipper = (SimpleDiagram, SDCtx, T2 Double)            -- add transformations and make this a triple?
 
 class Showzip a where
   showzip :: a -> String
@@ -101,13 +103,15 @@ makeZipper = topZ
 
 
 rightZ :: SDzipper -> SDzipper
-rightZ (sd, AtopLCtx ctx sd1, tr) =  (sd1, AtopRCtx sd ctx, tr)
-rightZ loc                        = loc
+rightZ (sd, AtopLCtx ctx sd1, tr)     =  (sd1, AtopRCtx sd ctx, tr)
+rightZ (sd, AssignVCtx s ctx sd1, tr) =  (sd1, AssignECtx s sd ctx, tr)
+rightZ loc                            = loc
 
 
 leftZ :: SDzipper -> SDzipper
-leftZ (sd, AtopRCtx sd1 ctx, tr) = (sd1, AtopLCtx ctx sd, tr)
-leftZ loc                        = loc
+leftZ (sd, AtopRCtx sd1 ctx, tr)     = (sd1, AtopLCtx ctx sd, tr)
+leftZ (sd, AssignECtx s sd1 ctx, tr) = (sd1, AssignVCtx s ctx sd, tr)
+leftZ loc                            = loc
 
 
 downZ :: SDzipper -> SDzipper
@@ -116,8 +120,7 @@ downZ (Assign s sd1 sd2, ctx, tr)     = (sd1, AssignVCtx s ctx sd2, tr)
 downZ (T (Scale d) sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
 downZ (T (Translate v) sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
 downZ (T (Rotate a) sd, ctx, tr)      = (sd, RotateCtx a ctx, tr <> rotation (a @@ deg))
--- downZ (Assign s sd sd1, ctx, tr)          = (sd, AssignVCtx s ctx sd1, tr)
-downZ (Iterate n tra m sd, ctx, tr)     = (sd, IterCtx n tra m ctx, tr)
+downZ (Iterate n tra m sd, ctx, tr)   = (sd, IterCtx n tra m ctx, tr)
 downZ loc                             = loc
 
 

@@ -1,7 +1,8 @@
 module MyParser
   ( -- * Lexing
    myparse, myparens, myreserved, myreservedOp,
-   mysymbol, ident, mydouble, myinteger, mywhiteSpace, mybrackets
+   mysymbol, ident, mydouble, myinteger, mywhiteSpace, mybrackets, mysemiSep, mysemiSep1,
+   mycommaSep, mycommaSep1
 
   )
   where
@@ -25,7 +26,7 @@ lexer :: TokenParser u
 lexer = makeTokenParser $
   emptyDef
    { reservedNames   = ["circle", "scale", "translate", "atop", "(", ",", ")"
-                       , "let", "in", "=", "triangle", "square", "polygon", "iterate", "rotate"]}
+                       , "let", "in", "=", "triangle", "square", "polygon", "iterate", "rotate", "#"]}
 
 myparens :: Parser a -> Parser a
 myparens = parens lexer
@@ -36,6 +37,18 @@ mybrackets = brackets lexer
 myreserved, myreservedOp :: String -> Parser ()
 myreserved   = reserved lexer
 myreservedOp = reservedOp lexer
+
+mysemiSep :: Parser a -> Parser [a]
+mysemiSep = semiSep lexer
+
+mycommaSep :: Parser a -> Parser [a]
+mycommaSep = commaSep lexer
+
+mycommaSep1 :: Parser a -> Parser [a]
+mycommaSep1 = commaSep1 lexer
+
+mysemiSep1 :: Parser a -> Parser [a]
+mysemiSep1 = semiSep1 lexer
 
 mysymbol :: String -> Parser String
 mysymbol = symbol lexer
