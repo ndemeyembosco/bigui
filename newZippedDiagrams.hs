@@ -288,7 +288,7 @@ setup window = void $ mdo
       leftClickE          = LEFT  <$ UI.click leftButton
       rightClickE         = RIGHT <$ UI.click rightButton
       splitClickE         = UI.click splitButton
-      (splitInputE :: T.Event [(Int, String)])        = readInt <$> UI.valueChange textfield
+      (splitInputE :: T.Event [(Int, String)])        = T.filterE (/= []) (readInt <$> UI.valueChange textfield)
       spaceE              = (==32) <$> UI.keydown codeArea
 
       -- transform point into diagram coordinates and generate cursors events from it
@@ -445,8 +445,8 @@ splitTransFormHelper n (Rotate a) = let m = fromIntegral n in Rotate (a*m)
 
 splitTree' :: Int -> SimpleDiagram -> SimpleDiagram
 splitTree' n zp@(Iterate m tra may sd) = case may of
-  Nothing -> Atop (T (splitTransFormHelper n tra) sd) (Iterate n tra (Just [n]) sd)
-  Just t  -> if n `elem` t then undefined else Atop (T (splitTransFormHelper n tra) sd) (Iterate n tra (Just (n : t)) sd)
+  Nothing -> Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra (Just [n]) sd)
+  Just t  -> if n `elem` t then zp else Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra (Just (n : t)) sd)
 splitTree' n sd                        = sd
 
 splitTree :: [Int] -> SimpleDiagram -> SimpleDiagram
