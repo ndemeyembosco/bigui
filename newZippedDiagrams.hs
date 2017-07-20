@@ -470,11 +470,16 @@ generateNewName l = "x" ++ show ((maximum $ fmap (\s -> (read $ tail s) :: Integ
 
 splitProgZipper :: Int -> ProgZipper -> ProgZipper
 splitProgZipper n prz = case prz of
-  (Right (Iterate m tra t sd, ctx1, tr), ProgSCtx l ctx) -> if n `elem` t then prz
+  (Right (Iterate m tra t sd, ctx1, tr), ProgSCtx l ctx) -> case sd of
+                                          Var var -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra ( (n : t)) sd), ctx1, tr), ProgSCtx (makeLAssignZipper (unZipL l)) ctx)
+                                          _       -> if n `elem` t then prz
                                                               else let name = generateNewName (unZipL l)
                                                                        in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
                                                                            (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((unZipL l) ++ [(name, sd)])) ctx)
-  (Right (Iterate m tra t sd, ctx1, tr), TopP)           -> if n `elem` t then prz
+  (Right (Iterate m tra t sd, ctx1, tr), TopP)           -> case sd of
+                                          Var var  -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd)
+                                                      (Iterate m tra ( (n : t)) sd), ctx1, tr), TopP)
+                                          _        -> if n `elem` t then prz
                                                               else let name = generateNewName []
                                                                      in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
                                                                          (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
