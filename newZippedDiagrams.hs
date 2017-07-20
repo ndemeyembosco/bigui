@@ -48,6 +48,7 @@ import           Data.IORef
 import           Control.Monad.IO.Class
 import           NewSDzipper
 import           MyParser
+import           Text.Read
 
 type Assign = (String, SimpleDiagram)
 
@@ -394,7 +395,7 @@ runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
   Right _ -> editZPS (navigateTree k) zp
   Left _  -> zp
 runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
-  Right (sdz, _ , _) -> let func = editZ (splitTree [n]) in editZPS func zp
+  Right (sdz, _ , _) -> splitLProgZipper [n] zp
   Left _  -> zp
 
 
@@ -451,6 +452,42 @@ splitTree' n sd                        = sd
 
 splitTree :: [Int] -> SimpleDiagram -> SimpleDiagram
 splitTree l sd = foldr (\n sd1 -> splitTree' n sd1) sd l
+
+
+isCreatedVarFormat :: String -> Bool
+isCreatedVarFormat s = case ((readMaybe $ tail s) :: Maybe Integer) of
+  Just n -> if head s == 'x' then True else False
+  _      -> False
+
+
+
+
+generateNewName :: [Assign] -> String
+generateNewName [] = "x0"
+generateNewName l = "x" ++ show ((maximum $ fmap (\s -> (read $ tail s) :: Integer) l1) + 1)
+     where
+       l1 = filter isCreatedVarFormat $ fmap fst l
+
+
+splitProgZipper :: Int -> ProgZipper -> ProgZipper
+splitProgZipper n prz = case prz of
+  (Right (Iterate m tra may sd, ctx1, tr), ProgSCtx l ctx) -> case may of
+    Nothing -> let name = generateNewName (unZipL l) in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just [n]) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((name, sd) : (unZipL l))) ctx)
+    Just t  -> if n `elem` t then prz else let name = generateNewName (unZipL l) in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((name, sd) : (unZipL l))) ctx)
+  (Right (Iterate m tra may sd, ctx1, tr), TopP)           -> case may of
+    Nothing -> let name = generateNewName [] in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just [n]) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
+    Just t  -> if n `elem` t then prz else let name = generateNewName [] in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (Just (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
+  pzi                                                  -> pzi
+
+
+
+splitLProgZipper :: [Int] -> ProgZipper -> ProgZipper
+splitLProgZipper l prz = foldr (\n pr1 -> splitProgZipper n pr1) prz l
+
+-- splitProg :: Int -> Prog -> Prog
+-- splitProg n zp@(ProgVS l sd@(Iterate m tra may sd)) = case may of
+--   Nothing -> let name = generateNewName l in ProgVS ((name, sd) : l) (Atop (T (splitTransFormHelper (n - 1) tra) name) ((Iterate m tra (Just [n]) name)))
+--   Just t  -> if n `elem` t then zp else let name = generateNewName l in ProgVS ((name, sd) : l) Atop ((T (splitTransFormHelper (n - 1) tra) name) (Iterate m tra (Just (n : t)) name)
 
 {- handle control-key presses -}
 navigateTree :: DIRECTION -> SDzipper -> SDzipper
