@@ -162,7 +162,7 @@ interpSimpleDiagram e (Atop sdl sdr) = interpSimpleDiagram e sdl `atop` interpSi
 interpSimpleDiagram e (T tr sd) = interpSimpleDiagram  e sd # transform (findTransform tr)
 interpSimpleDiagram e (Iterate n tra m sd) = case m of
   Nothing -> mconcat $ iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd)
-  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $  deleteDiagFList (t - 1) l)
+  Just t  -> let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $ deleteLDiagFList t l)
 interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram  e sd  # lw veryThick)
 interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s (interpSimpleDiagram e sd1) e) sd2
 interpSimpleDiagram e (Var s)          = case M.lookup s e of
@@ -171,6 +171,9 @@ interpSimpleDiagram e (Var s)          = case M.lookup s e of
 
 deleteDiagFList :: Int -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
 deleteDiagFList n l = let l1 = splitAt n l in fst l1 ++ (tail $ snd $ splitAt n l)
+
+deleteLDiagFList :: [Int] -> [QDiagram SVG V2 Double Any] -> [QDiagram SVG V2 Double Any]
+deleteLDiagFList l ql = foldr (\n list -> deleteDiagFList (n - 1) list) ql l
 
 parseSVG :: String -> String
 parseSVG [] = []
@@ -198,8 +201,8 @@ parseTransformEdit = try (Translate <$> (myreserved "translate" *> parseCoord))
                      <|> (Scale <$> (myreserved "scale" *> mydouble))
                      <|> (Rotate <$> (myreserved "rotate" *> mydouble))
 
-parseSplit :: Parser Int
-parseSplit = mybrackets (mysymbol "/" *> myinteger)
+parseSplit :: Parser [Int]
+parseSplit = mybrackets (mysymbol "/" *> mycommaSep1 myinteger)
 
 
 parseAssign :: Parser SimpleDiagram
@@ -221,10 +224,6 @@ parseSimpleDiagram = (Pr Circle) <$ myreserved "circle"
     <|> parseCursor
     <|> try (Var <$> ident)
 
--- evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
--- evalExpr' s = case myparse parseSimpleDiagram s of
---   Right sd -> Just (interpSimpleDiagram M.empty sd)
---   Left _   -> Nothing
 
 evalExpr' :: String -> Maybe (QDiagram SVG V2 Double Any)
 evalExpr' s = case myparse parseProg s of
@@ -321,7 +320,7 @@ setup window = void $ mdo
       mouseOutE        = fst <$> mouseOutTupleE
       draggingE        = T.whenE ismouseDragB mousemoveE
       mvPointsE        = transform <$> (inv <$> transformB) T.<@> (makePoint <$> draggingE)
-      -- codeAreaE'       = T.whenE
+
     -- merge mousedown event with drag event to avoid jumping when dragging resumes
       unionEventMvDown = T.unionWith const (fst <$> mouseInTupleE) mvPointsE
 
@@ -395,7 +394,7 @@ runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
   Right _ -> editZPS (navigateTree k) zp
   Left _  -> zp
 runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
-  Right (sdz, _ , _) -> let func = editZ (splitTree n) in editZPS func zp
+  Right (sdz, _ , _) -> let func = editZ (splitTree [n]) in editZPS func zp
   Left _  -> zp
 
 
@@ -439,15 +438,19 @@ refactorTree'  v  sd                       = T (Translate v) sd
 
 
 
+splitTransFormHelper :: Int -> TransformationEdit -> TransformationEdit
+splitTransFormHelper n (Scale d) = Scale (d^n)
+splitTransFormHelper n (Translate (V2 v1 v2)) = let m = fromIntegral n in Translate (V2 (v1*m) (v2*m))
+splitTransFormHelper n (Rotate a) = let m = fromIntegral n in Rotate (a*m)
 
-splitTree :: Int -> SimpleDiagram -> SimpleDiagram
-splitTree n zp@(Iterate m tra may sd) = case may of
-  Nothing -> case tra of
-    Scale d     -> (Atop (T (Scale (d^n)) sd) (Iterate n tra (Just n) sd))
-    Translate (V2 v1 v2) -> let m = fromIntegral n in (Atop (T (Translate (V2 (v1*m) (v2*m))) sd) (Iterate n tra (Just n) sd))
-    Rotate a    -> let m = fromIntegral n in (Atop (T (Rotate (a*m)) sd) (Iterate n tra (Just n) sd))
-  Just t  -> undefined
-splitTree n sd                        = sd
+splitTree' :: Int -> SimpleDiagram -> SimpleDiagram
+splitTree' n zp@(Iterate m tra may sd) = case may of
+  Nothing -> Atop (T (splitTransFormHelper n tra) sd) (Iterate n tra (Just [n]) sd)
+  Just t  -> if n `elem` t then undefined else Atop (T (splitTransFormHelper n tra) sd) (Iterate n tra (Just (n : t)) sd)
+splitTree' n sd                        = sd
+
+splitTree :: [Int] -> SimpleDiagram -> SimpleDiagram
+splitTree l sd = foldr (\n sd1 -> splitTree' n sd1) sd l
 
 {- handle control-key presses -}
 navigateTree :: DIRECTION -> SDzipper -> SDzipper
@@ -495,10 +498,15 @@ pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++
 pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr
 pprintTree' n (Iterate m tra may sd) = case may of
   Nothing -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ "\n"  ++  pprintTree' (n + 1) sd
-  Just t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ show t ++ "]" ++ "\n"  ++  pprintTree' (n + 1) sd
+  Just t  -> replicateSp n ++ "iterate " ++ show m ++ " " ++  pprintTransfromEdit tra  ++ " [/" ++ pprintNList t ++ "\n"  ++  pprintTree' (n + 1) sd
 pprintTree' n (Cursor sd)        = case sd of
   (Pr SEmpty)   -> pprintTree' n sd
   _             -> "==> " ++ pprintTree' n sd
+
+pprintNList :: [Int] -> String
+pprintNList [] = ""
+pprintNList [x] = show x ++ "]"
+pprintNList (x:xs) = show x ++ ", " ++ pprintNList xs
 
 
 readInt :: String -> [(Int, String)]
