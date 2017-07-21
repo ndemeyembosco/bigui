@@ -246,13 +246,12 @@ data SDdata where
   Nav       :: DIRECTION -> SDdata
   Split     :: Int       -> SDdata
   deriving (Show)
---
+
+
 data DIRECTION = LEFT | RIGHT | UP | DOWN
   deriving (Show, Eq)
---
---
---
---
+
+
 main :: IO ()
 main = do
   T.startGUI T.defaultConfig setup
@@ -489,11 +488,6 @@ splitProgZipper n prz = case prz of
 
 splitLProgZipper :: [Int] -> ProgZipper -> ProgZipper
 splitLProgZipper l prz = foldr (\n pr1 -> splitProgZipper n pr1) prz l
-
--- splitProg :: Int -> Prog -> Prog
--- splitProg n zp@(ProgVS l sd@(Iterate m tra may sd)) = case may of
---   Nothing -> let name = generateNewName l in ProgVS ((name, sd) : l) (Atop (T (splitTransFormHelper (n - 1) tra) name) ((Iterate m tra (Just [n]) name)))
---   Just t  -> if n `elem` t then zp else let name = generateNewName l in ProgVS ((name, sd) : l) Atop ((T (splitTransFormHelper (n - 1) tra) name) (Iterate m tra (Just (n : t)) name)
 
 {- handle control-key presses -}
 navigateTree :: DIRECTION -> SDzipper -> SDzipper
