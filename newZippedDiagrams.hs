@@ -306,23 +306,6 @@ makeDToDraw' pr = let code = interpProg M.empty pr # withEnvelope (square 10 :: 
 tripleFst :: (a, b, c) -> a
 tripleFst (a, b, c) = a
 
--- runSDdata' :: SDdata -> Maybe (ProgZipper -> ProgZipper)
--- runSDdata' (FrmCode str)   = case myparse parseProg str of
---   Right sd -> Just $ const (makeProgZipper sd)
---   Left  _  -> Nothing
--- runSDdata' (DragCoord cd)  = Just $ \zp@(sd, ctx) -> case sd of
---   Right (_, _, tr) -> editZPS (refactorTree tr cd) zp
---   Left _  -> zp
--- runSDdata' (Click pt)      = Just $ \sd@(sd1, ctx) -> case sd1 of
---   Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform tr1 pt) sd2) in editZPS func sd
---   Left _ -> sd
--- runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
---   Right _ -> editZPS (navigateTree k) zp
---   Left _  -> zp
--- runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
---   Right (sdz, _ , _) -> splitLProgZipper [n] zp
---   Left _  -> zp
-
 
 runSDdata :: SDdata -> Maybe ((GenZipper, T2 Double) -> (GenZipper, T2 Double))
 runSDdata (FrmCode str)  = case myparse parseProg str of
@@ -393,12 +376,6 @@ splitTree :: [Int] -> SimpleDiagram -> SimpleDiagram
 splitTree l sd = foldr (\n sd1 -> splitTree' n sd1) sd l
 
 
--- isCreatedVarFormat :: String -> Bool
--- isCreatedVarFormat s = case ((readMaybe $ tail s) :: Maybe Integer) of
---   Just n -> head s == 'x'
---   _      -> False
-
-
 isCreatedVarFormat :: String -> Maybe Integer
 isCreatedVarFormat ('x':xs) = readMaybe xs
 isCreatedVarFormat _        = Nothing
@@ -425,39 +402,10 @@ splitGenZipper n z@(gz, tr) = case gz of
   pzi                                                   -> (pzi, tr)
 
 
--- splitProgZipper :: Int -> ProgZipper -> ProgZipper
--- splitProgZipper n prz = case prz of
---   (Right (Iterate m tra t sd, ctx1, tr), ProgSCtx l ctx) -> case sd of
---                                           Var var -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra ( (n : t)) sd), ctx1, tr), ProgSCtx (makeLAssignZipper (unZipL l)) ctx)
---                                           _       -> if n `elem` t then prz
---                                                               else let name = generateNewName (unZipL l)
---                                                                        in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
---                                                                            (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((unZipL l) ++ [(name, sd)])) ctx)
---   (Right (Iterate m tra t sd, ctx1, tr), TopP)           -> case sd of
---                                           Var var  -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd)
---                                                       (Iterate m tra ( (n : t)) sd), ctx1, tr), TopP)
---                                           _        -> if n `elem` t then prz
---                                                               else let name = generateNewName []
---                                                                      in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
---                                                                          (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
---   pzi                                                   -> pzi
-
 
 
 splitLGenZipper :: [Int] -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 splitLGenZipper l gz = foldr (\n gz1 -> splitGenZipper n gz1) gz l
-
--- splitLProgZipper :: [Int] -> ProgZipper -> ProgZipper
--- splitLProgZipper l prz = foldr (\n pr1 -> splitProgZipper n pr1) prz l
-
-{- handle control-key presses -}
--- navigateTree :: DIRECTION -> SDzipper -> SDzipper
--- navigateTree k z
---                   |k == DOWN  = downZ  z
---                   |k == UP    = upZ    z
---                   |k == LEFT  = leftZ  z
---                   |k == RIGHT = rightZ z
---                   |otherwise  = z
 
 
 navigateProg :: DIRECTION -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)

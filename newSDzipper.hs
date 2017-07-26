@@ -13,12 +13,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module NewSDzipper
-    (Showzip (..), TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx (..), SDzipper
-     , Assign, Prog(..), ProgZipper, LAssignZipper, LAssignCtx, ProgCtx(..)
-     ,leftP, rightP, upP, editZPS, editZP, makeProgZipper, unZipProgZ, unZipL
-     , makeLAssignZipper, upLz, downLz
-    , upZ, leftZ, rightZ
-    , upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform
+    (Showzip (..), TransformationEdit (..), Primitive (..), SimpleDiagram (..), SDCtx(..)
+     , Assign, Prog(..), findTransform
     , GenZipper (..), LAssignGenCtx (..), ProgGenCtx (..), TransCtx (..)
     , DoubleCtx (..), IntCtx (..), VarCtx (..), AssignCtx (..)
     , upGenZ, topGenZ, makeGenZipper, downGenZ, rightGenZ, leftGenZ
@@ -29,9 +25,6 @@ import qualified Data.Map as M
 
 
 type Sides = Int
-
-
-
 
 data SimpleDiagram where
   Let   :: String        -> SimpleDiagram -> SimpleDiagram -> SimpleDiagram
@@ -78,19 +71,8 @@ data SDCtx where
   deriving (Show)
 
 
-
-
-
-
-
-
-type SDzipper = (SimpleDiagram, SDCtx, T2 Double)            -- add transformations and make this a triple?
-
 class Showzip a where
   showzip :: a -> String
-
-instance Showzip SDzipper where
-  showzip (sd, ctx, tr) = show (sd, ctx)
 
 
 findTransform :: TransformationEdit -> T2 Double
@@ -98,67 +80,6 @@ findTransform (Scale d)      = scaling d
 findTransform (Translate v)  = translation v
 findTransform (Rotate a)     = rotation (a @@ deg)
 
-
-
-upZ :: SDzipper -> SDzipper
-upZ c@(sd, Top , tr)            = c
-upZ (sd, ScaleCtx d ctx, tr)   = (T (Scale d) sd, ctx, tr <> inv (scaling d))
-upZ (sd, TransCtx v ctx, tr)   = (T (Translate v) sd, ctx, tr <> inv (translation v))
-upZ (sd, RotateCtx a ctx, tr)  = (T (Rotate a) sd, ctx, tr <> inv (rotation (a @@ deg)))
-upZ (sd, AtopLCtx ctx sd1, tr) = (Atop sd sd1, ctx, tr)
-upZ (sd, AtopRCtx sd1 ctx, tr) = (Atop sd1 sd, ctx, tr)
-upZ (sd, LetVCtx s ctx sd1, tr)  = (Let s sd sd1, ctx, tr)
-upZ (sd, LetECtx s sd1 ctx, tr)  = (Let s sd1 sd, ctx, tr)
-upZ (sd, IterCtx n tra m ctx, tr) = (Iterate n tra m sd, ctx, tr)
-
-
-topZ :: SimpleDiagram -> SDzipper     -- a.k.a makeZipper
-topZ sd = (sd, Top, mempty)
-
-makeZipper :: SimpleDiagram -> SDzipper
-makeZipper = topZ
-
-
-rightZ :: SDzipper -> SDzipper
-rightZ (sd, AtopLCtx ctx sd1, tr)     =  (sd1, AtopRCtx sd ctx, tr)
-rightZ (sd, LetVCtx s ctx sd1, tr) =  (sd1, LetECtx s sd ctx, tr)
-rightZ loc                            = loc
-
-
-leftZ :: SDzipper -> SDzipper
-leftZ (sd, AtopRCtx sd1 ctx, tr)     = (sd1, AtopLCtx ctx sd, tr)
-leftZ (sd, LetECtx s sd1 ctx, tr) = (sd1, LetVCtx s ctx sd, tr)
-leftZ loc                            = loc
-
-
-downZ :: SDzipper -> SDzipper
-downZ (Atop l r, ctx, tr)             = (l, AtopLCtx ctx r, tr)   -- by default go left first.
-downZ (Let s sd1 sd2, ctx, tr)     = (sd1, LetVCtx s ctx sd2, tr)
-downZ (T (Scale d) sd, ctx, tr)       = (sd, ScaleCtx d ctx, tr <> scaling d)
-downZ (T (Translate v) sd, ctx, tr)   = (sd, TransCtx v ctx, tr <> translation v)
-downZ (T (Rotate a) sd, ctx, tr)      = (sd, RotateCtx a ctx, tr <> rotation (a @@ deg))
-downZ (Iterate n tra m sd, ctx, tr)   = (sd, IterCtx n tra m ctx, tr)
-downZ loc                             = loc
-
-
-upmostZ :: SDzipper -> SDzipper
-upmostZ l@(t, Top, tr) = l
-upmostZ l              = upmostZ $ upZ l
-
-
-editZ :: (SimpleDiagram -> SimpleDiagram) -> SDzipper -> SDzipper
-editZ f (sd, ctx, tr) = (f sd, ctx, tr)
-
-unZipSD :: SDzipper -> SimpleDiagram
-unZipSD loc = case upmostZ loc of
-  (f, s, t) -> f
-
-
-unZipWith :: (SimpleDiagram -> SimpleDiagram) -> SDzipper -> SimpleDiagram
-unZipWith f loc = unZipSD $ editZ f loc
-
-
------------------------------------------------------------------------------------------------------------
 type Assign = (String, SimpleDiagram)
 
 data Prog where
@@ -167,85 +88,20 @@ data Prog where
   ProgVS :: [Assign]      -> SimpleDiagram -> Prog
   deriving (Show)
 
+data FocDouble where
+  CurDouble :: FocDouble -> FocDouble
+  Dbl       :: Double    -> FocDouble
+  deriving (Show)
 
-type ProgZipper = (Either LAssignZipper SDzipper, ProgCtx)
+data FocInt where
+  CurInt  :: FocInt -> FocInt
+  FInt    :: Int    -> FocInt
+  deriving (Show)
 
-instance Showzip ProgZipper where
-  showzip (Left l, prctx) = "(" ++ show l ++ ", " ++ showzip prctx ++ ")"
-  showzip (Right sdz, prctx) = "(" ++ showzip sdz ++ ", " ++ showzip prctx ++ ")"
-
-type LAssignZipper = (Assign, LAssignCtx)
-type LAssignCtx = ([Assign], [Assign]) -- (above, below)
-
-data ProgCtx where
-  TopP     :: ProgCtx
-  ProgVCtx :: ProgCtx -> SDzipper -> ProgCtx
-  ProgSCtx :: LAssignZipper   -> ProgCtx -> ProgCtx
-
-instance Showzip ProgCtx where
-  showzip TopP = "TopP"
-  showzip (ProgVCtx prctx sdz) = "ProgVCtx " ++ showzip prctx ++ " " ++ showzip sdz
-  showzip (ProgSCtx l prctx)   = "ProgSCtx " ++ show l ++ " " ++ showzip prctx
-
-
-leftP :: ProgZipper -> ProgZipper
-leftP (Right sd, ProgSCtx l pctx) = (Left l, ProgVCtx pctx sd)
-leftP p                           = p
-
-rightP :: ProgZipper -> ProgZipper
-rightP (Left l, ProgVCtx pctx sd) = (Right sd, ProgSCtx l pctx)
-rightP p                          = p
-
-upP :: ProgZipper -> ProgZipper
-upP (Right szp, ctx) = (Right (upZ szp), ctx)
-upP (Left l, ctx)    = (Left (upLz l), ctx)
-
-downP :: ProgZipper -> ProgZipper
-downP (Right szp, ctx) = (Right (downZ szp), ctx)
-downP (Left l, ctx)    = (Left (downLz l), ctx)
-
-
-
-editZPS :: (SDzipper -> SDzipper) -> ProgZipper -> ProgZipper
-editZPS f (Right sdz, ctx) = (Right (f sdz), ctx)
-editZPS f (Left l, ProgVCtx pctx sdz) = (Right (f sdz), ProgSCtx l pctx)
-editZPS f z                           = z
-
-editZP :: (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper) -> ProgZipper -> ProgZipper
-editZP f (z, pctx)     = (f z, pctx)
-
-
-makeProgZipper :: Prog -> ProgZipper
-makeProgZipper (PVars l)     = (Left (makeLAssignZipper l), TopP)
-makeProgZipper (PSdia sd)    = (Right (makeZipper sd), TopP)
-makeProgZipper (ProgVS l sd) = (Right (makeZipper sd), ProgSCtx (makeLAssignZipper l) TopP)
-
-unZipProgZ :: ProgZipper -> Prog
-unZipProgZ prz = case prz of
-  (Right sdz, ProgSCtx l ctx) -> ProgVS (unZipL l) (unZipSD sdz)
-  (Left l, ProgVCtx ctx sd)   -> ProgVS (unZipL l) (unZipSD sd)
-  (Right sdz, TopP)           -> PSdia (unZipSD sdz)  -- probably wrong?
-  (Left lz, TopP)             -> PVars (unZipL lz)    -- probably wrong?
-
-unZipL :: LAssignZipper -> [Assign]
-unZipL (as, (labove, lbelow)) = labove ++ [as] ++ lbelow
-
-makeLAssignZipper :: [Assign] -> LAssignZipper
-makeLAssignZipper l = (head l, ([], tail l))
-
-upLz :: LAssignZipper -> LAssignZipper
-upLz z@(as, (labove, lbelow)) = case labove of
-  []       -> z
-  l@(x:xs) -> (last l, (drop ((length l) - 1) l, as : lbelow))
-
-downLz :: LAssignZipper -> LAssignZipper
-downLz z@(as, (labove, lbelow)) = case lbelow of
-  []        -> z
-  l@(x:xs)  -> (x, (labove ++ [as], xs))
-
-
-
-----------------------------------------------------------------------------------
+data FocString where
+  CurStr :: FocString -> FocString
+  FString :: String -> FocString
+  deriving (Show)
 
 
 data GenZipper where
