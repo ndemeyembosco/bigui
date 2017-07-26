@@ -18,7 +18,11 @@ module NewSDzipper
      ,leftP, rightP, upP, editZPS, editZP, makeProgZipper, unZipProgZ, unZipL
      , makeLAssignZipper, upLz, downLz
     , upZ, leftZ, rightZ
-    , upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform) where
+    , upmostZ, editZ, unZipSD, unZipWith, makeZipper, downZ, findTransform
+    , GenZipper (..), LAssignGenCtx (..), ProgGenCtx (..), TransCtx (..)
+    , DoubleCtx (..), IntCtx (..), VarCtx (..), AssignCtx (..)
+    , upGenZ, topGenZ, makeGenZipper, downGenZ, rightGenZ, leftGenZ
+    , upmostGenZ, unZipGenZ, editZipper, Modifyable (..)) where
 
 import Diagrams.Prelude
 import qualified Data.Map as M
@@ -253,6 +257,7 @@ data GenZipper where
   IntZ        :: Int                 -> IntCtx     -> GenZipper
   TransZ      :: TransformationEdit  -> TransCtx   -> GenZipper
   VarZ        :: String              -> VarCtx     -> GenZipper
+  deriving Show
 
 data LAssignGenCtx where
   ProgC :: SimpleDiagram -> ProgGenCtx -> LAssignGenCtx
@@ -422,8 +427,9 @@ leftGenZ (gz, tr) = case gz of
 
 
 upmostGenZ :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
-upmostGenZ z@(LAssignGenZ l ctx, tr) = z
+upmostGenZ z@(LAssignGenZ l (ProgC sd ctx), tr) = (SDZ sd (LAssignSDCtx l ctx), tr)
 upmostGenZ z@(SDZ sd (LAssignSDCtx [] TopGenCtx), tr) = z
+-- upmostGenZ z@(SDZ sd (LAssignSDCtx l TopGenCtx), tr)  = z
 upmostGenZ z = upmostGenZ $ upGenZ z
 
 -- editGenZ
@@ -434,7 +440,11 @@ unZipGenZ (LAssignGenZ l (ProgC (Pr SEmpty) prctx), tr) = PVars l
 unZipGenZ (LAssignGenZ l (ProgC sd prctx), tr) = ProgVS l sd
 unZipGenZ (SDZ sd (LAssignSDCtx [] prctx), tr) = PSdia sd
 unZipGenZ (SDZ sd (LAssignSDCtx l prctx), tr) = ProgVS l sd
-unZipGenZ z                                   = undefined
+unZipGenZ z                                   = unZipGenZ $ upmostGenZ z
+
+
+editZipper :: Modifyable a => (a -> a) -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+editZipper = editGenZ
 
 
 class Modifyable a where
@@ -469,3 +479,6 @@ instance Modifyable String where
   editGenZ f t@(gz, tr) = case gz of
     VarZ s  ctx      -> (VarZ (f s) ctx, tr)
     _                -> t
+
+instance Showzip (GenZipper, T2 Double) where
+  showzip (gz, tr) = show gz

@@ -23,6 +23,7 @@ import qualified Graphics.UI.Threepenny.Core as T
 
 import Data.Functor
 import Data.List
+import Data.Maybe
 import qualified Data.Text.Internal as LT
 import qualified Data.Text.Internal.Lazy as LTZ
 import qualified Data.Text.Lazy as DT
@@ -50,14 +51,6 @@ import           NewSDzipper
 import           MyParser
 import           Text.Read
 
-type Assign = (String, SimpleDiagram)
-
-data Prog where
-  PVars  :: [Assign]      -> Prog
-  PSdia  :: SimpleDiagram -> Prog
-  ProgVS :: [Assign]      -> SimpleDiagram -> Prog
-  deriving (Show)
-
 assignParse :: Parser Assign
 assignParse = (,) <$> ident <*> (myreserved "=" *> parseSimpleDiagram)
 
@@ -81,75 +74,6 @@ interpProg e (ProgVS l sd) = let env = interpVarSection e l in interpSimpleDiagr
 
 
 ------------------------------------- Prog Zipper --------------------------------------------------
-type ProgZipper = (Either LAssignZipper SDzipper, ProgCtx)
-
-instance Showzip ProgZipper where
-  showzip (Left l, prctx) = "(" ++ show l ++ ", " ++ showzip prctx ++ ")"
-  showzip (Right sdz, prctx) = "(" ++ showzip sdz ++ ", " ++ showzip prctx ++ ")"
-
-type LAssignZipper = (Assign, LAssignCtx)
-type LAssignCtx = ([Assign], [Assign]) -- (above, below)
-
-data ProgCtx where
-  TopP     :: ProgCtx
-  ProgVCtx :: ProgCtx -> SDzipper -> ProgCtx
-  ProgSCtx :: LAssignZipper   -> ProgCtx -> ProgCtx
-
-instance Showzip ProgCtx where
-  showzip TopP = "TopP"
-  showzip (ProgVCtx prctx sdz) = "ProgVCtx " ++ showzip prctx ++ " " ++ showzip sdz
-  showzip (ProgSCtx l prctx)   = "ProgSCtx " ++ show l ++ " " ++ showzip prctx
-
-leftP :: ProgZipper -> ProgZipper
-leftP (Right sd, ProgSCtx l pctx) = (Left l, ProgVCtx pctx sd)
-
-rightP :: ProgZipper -> ProgZipper
-rightP (Left l, ProgVCtx pctx sd) = (Right sd, ProgSCtx l pctx)
-
-upP :: ProgZipper -> ProgZipper
-upP pr@(Right szp, ProgSCtx l pctx) = leftP pr
-upP pz    = pz
-
-
-
-editZPS :: (SDzipper -> SDzipper) -> ProgZipper -> ProgZipper
-editZPS f (Right sdz, ctx) = (Right (f sdz), ctx)
-editZPS f (Left l, ProgVCtx pctx sdz) = (Right (f sdz), ProgSCtx l pctx)
-editZPS f z                           = z
-
-editZP :: (Either LAssignZipper SDzipper -> Either LAssignZipper SDzipper) -> ProgZipper -> ProgZipper
-editZP f (z, pctx)     = (f z, pctx)
-
-
-makeProgZipper :: Prog -> ProgZipper
-makeProgZipper (PVars l)     = (Left (makeLAssignZipper l), TopP)
-makeProgZipper (PSdia sd)    = (Right (makeZipper sd), TopP)
-makeProgZipper (ProgVS l sd) = (Right (makeZipper sd), ProgSCtx (makeLAssignZipper l) TopP)
-
-unZipProgZ :: ProgZipper -> Prog
-unZipProgZ prz = case prz of
-  (Right sdz, ProgSCtx l ctx) -> ProgVS (unZipL l) (unZipSD sdz)
-  (Left l, ProgVCtx ctx sd)   -> ProgVS (unZipL l) (unZipSD sd)
-  (Right sdz, TopP)           -> PSdia (unZipSD sdz)  -- probably wrong?
-  (Left lz, TopP)             -> PVars (unZipL lz)    -- probably wrong?
-
-unZipL :: LAssignZipper -> [Assign]
-unZipL (as, (labove, lbelow)) = labove ++ [as] ++ lbelow
-
-makeLAssignZipper :: [Assign] -> LAssignZipper
-makeLAssignZipper l = (head l, ([], tail l))
-
-upLz :: LAssignZipper -> LAssignZipper
-upLz z@(as, (labove, lbelow)) = case labove of
-  []       -> z
-  l@(x:xs) -> (last l, (drop ((length l) - 1) l, as : lbelow))
-
-downLz :: LAssignZipper -> LAssignZipper
-downLz z@(as, (labove, lbelow)) = case lbelow of
-  []        -> z
-  l@(x:xs)  -> (x, (labove ++ [as], xs))
-
-
 type Env   = M.Map String (QDiagram SVG V2 Double Any)
 
 interpSimpleDiagram :: Env -> SimpleDiagram -> QDiagram SVG V2 Double Any
@@ -163,7 +87,7 @@ interpSimpleDiagram e (Atop sdl sdr) = interpSimpleDiagram e sdl `atop` interpSi
 interpSimpleDiagram e (T tr sd) = interpSimpleDiagram  e sd # transform (findTransform tr)
 interpSimpleDiagram e (Iterate n tra m sd) = let l = iterateN n (transform $ findTransform tra) (interpSimpleDiagram  e sd) in (mconcat $ deleteLDiagFList m l)
 interpSimpleDiagram e (Cursor sd)      = (interpSimpleDiagram  e sd  # lw veryThick)
-interpSimpleDiagram e (Assign s sd1 sd2)    = interpSimpleDiagram (M.insert s (interpSimpleDiagram e sd1) e) sd2
+interpSimpleDiagram e (Let s sd1 sd2)    = interpSimpleDiagram (M.insert s (interpSimpleDiagram e sd1) e) sd2
 interpSimpleDiagram e (Var s)          = case M.lookup s e of
   Nothing -> mempty
   Just sd -> sd
@@ -205,7 +129,7 @@ parseSplit = mybrackets (mysymbol "/" *> mycommaSep1 myinteger)
 
 
 parseAssign :: Parser SimpleDiagram
-parseAssign = Assign <$> (myreserved "let" *> ident) <*> (myreserved "=" *> parseSimpleDiagram) <*> (myreserved "in" *> parseSimpleDiagram)
+parseAssign = Let <$> (myreserved "let" *> ident) <*> (myreserved "=" *> parseSimpleDiagram) <*> (myreserved "in" *> parseSimpleDiagram)
 
 parseIterate :: Parser SimpleDiagram
 parseIterate = Iterate <$> (myreserved "iterate" *> myinteger) <*> parseTransformEdit <*> (handleSplit <$> optionMaybe parseSplit) <*> parseSimpleDiagram
@@ -336,14 +260,15 @@ setup window = void $ mdo
   , run the edits and generate behavior of obtained simpleDiagram -}
 
       (formedSDdataE  :: T.Event SDdata)                              = mergeEvents codeAreaE translations mouseOutE upClickE downClickE leftClickE rightClickE splitInputE
-      (simpleDiagramE :: T.Event (ProgZipper -> ProgZipper))          = T.filterJust (runSDdata' <$> formedSDdataE)
+      (simpleDiagramE :: T.Event ((GenZipper, T2 Double) -> (GenZipper, T2 Double)))         = T.filterJust (runSDdata <$> formedSDdataE)
 
-  (simpleDiagramB'  :: T.Behavior ProgZipper)     <- T.accumB (Right (Pr SEmpty, Top, mempty), TopP) simpleDiagramE
+  (simpleDiagramB'  :: T.Behavior (GenZipper, T2 Double))     <- T.accumB (SDZ (Pr SEmpty) (LAssignSDCtx [] TopGenCtx), mempty) simpleDiagramE
   testBehavior                                    <- T.stepper (V2 0.0 0.0) translations
 
   let
   -- render diagram
-      simpleDiagramB = unZipProgZ <$> (editZPS (editZ Cursor) <$> simpleDiagramB')
+      simpleDiagramB = unZipGenZ <$> (editZipper Cursor <$> simpleDiagramB')
+      -- simpleDiagramB = unZipGenZ <$> simpleDiagramB'
       dTupleB        = makeDToDraw' <$> simpleDiagramB
       diagramStrB    = fmap (\(x, y, z) -> x) dTupleB
       transformB     = fmap (\(x, y, z) -> y) dTupleB
@@ -381,22 +306,36 @@ makeDToDraw' pr = let code = interpProg M.empty pr # withEnvelope (square 10 :: 
 tripleFst :: (a, b, c) -> a
 tripleFst (a, b, c) = a
 
-runSDdata' :: SDdata -> Maybe (ProgZipper -> ProgZipper)
-runSDdata' (FrmCode str)   = case myparse parseProg str of
-  Right sd -> Just $ const (makeProgZipper sd)
-  Left  _  -> Nothing
-runSDdata' (DragCoord cd)  = Just $ \zp@(sd, ctx) -> case sd of
-  Right (_, _, tr) -> editZPS (refactorTree tr cd) zp
-  Left _  -> zp
-runSDdata' (Click pt)      = Just $ \sd@(sd1, ctx) -> case sd1 of
-  Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform tr1 pt) sd2) in editZPS func sd
-  Left _ -> sd
-runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
-  Right _ -> editZPS (navigateTree k) zp
-  Left _  -> zp
-runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
-  Right (sdz, _ , _) -> splitLProgZipper [n] zp
-  Left _  -> zp
+-- runSDdata' :: SDdata -> Maybe (ProgZipper -> ProgZipper)
+-- runSDdata' (FrmCode str)   = case myparse parseProg str of
+--   Right sd -> Just $ const (makeProgZipper sd)
+--   Left  _  -> Nothing
+-- runSDdata' (DragCoord cd)  = Just $ \zp@(sd, ctx) -> case sd of
+--   Right (_, _, tr) -> editZPS (refactorTree tr cd) zp
+--   Left _  -> zp
+-- runSDdata' (Click pt)      = Just $ \sd@(sd1, ctx) -> case sd1 of
+--   Right (sd2, sdctx, tr1) -> let func = editZ (createNewDiagram (transform tr1 pt) sd2) in editZPS func sd
+--   Left _ -> sd
+-- runSDdata' (Nav k)  = Just $ \zp@(sd, ctx) -> case sd of
+--   Right _ -> editZPS (navigateTree k) zp
+--   Left _  -> zp
+-- runSDdata' (Split n)  = Just $ \zp@(sd, ctx) -> case sd of
+--   Right (sdz, _ , _) -> splitLProgZipper [n] zp
+--   Left _  -> zp
+
+
+runSDdata :: SDdata -> Maybe ((GenZipper, T2 Double) -> (GenZipper, T2 Double))
+runSDdata (FrmCode str)  = case myparse parseProg str of
+  Right prog -> Just $ const (makeGenZipper prog)
+  _          -> Nothing
+runSDdata (DragCoord cd) = Just $ \zp@(gz, tr) -> refactorSDOnDrag tr cd zp
+runSDdata (Click pt)     = Just $ \zp@(gz, tr) -> case gz of
+  SDZ sd ctx -> editZipper (createNewDiagram (transform tr pt) sd) zp
+  _          -> zp
+runSDdata (Nav k)        = Just $ navigateProg k
+runSDdata (Split n)      = Just $ splitLGenZipper [n]
+
+
 
 
 
@@ -425,16 +364,18 @@ makePoint :: (Int, Int) -> P2 Double
 makePoint (x, y) = p2 (fromIntegral x, fromIntegral y)
 
 
---- probably wrong.
 
-refactorTree :: T2 Double -> V2 Double -> SDzipper -> SDzipper
-refactorTree tr v sz = editZ (refactorTree' (transform (inv tr) v)) sz   -- use inv transformations
+refactorSDOnDrag :: T2 Double -> V2 Double -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+refactorSDOnDrag tr v gz = editZipper (refactorTree' (transform (inv tr) v)) gz
+
+
+-- refactorTree :: T2 Double -> V2 Double -> SDzipper -> SDzipper
+-- refactorTree tr v sz = editZ (refactorTree' (transform (inv tr) v)) sz   -- use inv transformations
 
 
 
 refactorTree' :: V2 Double -> SimpleDiagram -> SimpleDiagram
 refactorTree'  p (T (Translate v) sd)          = T (Translate (p ^+^ v)) sd
--- refactorTree'  (V2 d1 d2) sc@(Scale d sd)  = Translate (V2 (d1 / d) (d2 / d)) sc
 refactorTree'  v  sd                       = T (Translate v) sd
 
 
@@ -452,56 +393,86 @@ splitTree :: [Int] -> SimpleDiagram -> SimpleDiagram
 splitTree l sd = foldr (\n sd1 -> splitTree' n sd1) sd l
 
 
-isCreatedVarFormat :: String -> Bool
-isCreatedVarFormat s = case ((readMaybe $ tail s) :: Maybe Integer) of
-  Just n -> if head s == 'x' then True else False
-  _      -> False
+-- isCreatedVarFormat :: String -> Bool
+-- isCreatedVarFormat s = case ((readMaybe $ tail s) :: Maybe Integer) of
+--   Just n -> head s == 'x'
+--   _      -> False
+
+
+isCreatedVarFormat :: String -> Maybe Integer
+isCreatedVarFormat ('x':xs) = readMaybe xs
+isCreatedVarFormat _        = Nothing
 
 
 
 
 generateNewName :: [Assign] -> String
 generateNewName [] = "x0"
-generateNewName l = "x" ++ show ((maximum $ fmap (\s -> (read $ tail s) :: Integer) l1) + 1)
-     where
-       l1 = filter isCreatedVarFormat $ fmap fst l
-
-
-splitProgZipper :: Int -> ProgZipper -> ProgZipper
-splitProgZipper n prz = case prz of
-  (Right (Iterate m tra t sd, ctx1, tr), ProgSCtx l ctx) -> case sd of
-                                          Var var -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra ( (n : t)) sd), ctx1, tr), ProgSCtx (makeLAssignZipper (unZipL l)) ctx)
-                                          _       -> if n `elem` t then prz
-                                                              else let name = generateNewName (unZipL l)
-                                                                       in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
-                                                                           (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((unZipL l) ++ [(name, sd)])) ctx)
-  (Right (Iterate m tra t sd, ctx1, tr), TopP)           -> case sd of
-                                          Var var  -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd)
-                                                      (Iterate m tra ( (n : t)) sd), ctx1, tr), TopP)
-                                          _        -> if n `elem` t then prz
-                                                              else let name = generateNewName []
-                                                                     in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
-                                                                         (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
-  pzi                                                   -> pzi
+generateNewName l = let l1 = catMaybes $ fmap (\(s, sd) -> isCreatedVarFormat s) l in
+                        case l1 of
+                            (x:xs) -> "x" ++ show ((maximum l1) + 1)
+                            []     -> "x0"
 
 
 
-splitLProgZipper :: [Int] -> ProgZipper -> ProgZipper
-splitLProgZipper l prz = foldr (\n pr1 -> splitProgZipper n pr1) prz l
+splitGenZipper :: Int -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+splitGenZipper n z@(gz, tr) = case gz of
+  SDZ (Iterate m tra t sd) lassctx@(LAssignSDCtx l ctx) -> case sd of
+                                  Var var -> (SDZ (Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra ((n: t)) sd)) lassctx, tr)
+                                  _       -> if n `elem` t then (gz, tr)
+                                               else let name = generateNewName l
+                                                      in (SDZ (Atop (T (splitTransFormHelper (n - 1) tra) (Var name)) (Iterate m tra (n:t) (Var name))) (LAssignSDCtx (l ++ [(name, sd)]) ctx), tr)
+  pzi                                                   -> (pzi, tr)
+
+
+-- splitProgZipper :: Int -> ProgZipper -> ProgZipper
+-- splitProgZipper n prz = case prz of
+--   (Right (Iterate m tra t sd, ctx1, tr), ProgSCtx l ctx) -> case sd of
+--                                           Var var -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd) (Iterate m tra ( (n : t)) sd), ctx1, tr), ProgSCtx (makeLAssignZipper (unZipL l)) ctx)
+--                                           _       -> if n `elem` t then prz
+--                                                               else let name = generateNewName (unZipL l)
+--                                                                        in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
+--                                                                            (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper ((unZipL l) ++ [(name, sd)])) ctx)
+--   (Right (Iterate m tra t sd, ctx1, tr), TopP)           -> case sd of
+--                                           Var var  -> (Right (Atop (T (splitTransFormHelper (n - 1) tra) sd)
+--                                                       (Iterate m tra ( (n : t)) sd), ctx1, tr), TopP)
+--                                           _        -> if n `elem` t then prz
+--                                                               else let name = generateNewName []
+--                                                                      in (Right (Atop (T (splitTransFormHelper (n - 1) tra) (Var name))
+--                                                                          (Iterate m tra ( (n : t)) (Var name)), ctx1, tr), ProgSCtx (makeLAssignZipper [(name, sd)]) TopP)
+--   pzi                                                   -> pzi
+
+
+
+splitLGenZipper :: [Int] -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+splitLGenZipper l gz = foldr (\n gz1 -> splitGenZipper n gz1) gz l
+
+-- splitLProgZipper :: [Int] -> ProgZipper -> ProgZipper
+-- splitLProgZipper l prz = foldr (\n pr1 -> splitProgZipper n pr1) prz l
 
 {- handle control-key presses -}
-navigateTree :: DIRECTION -> SDzipper -> SDzipper
-navigateTree k z
-                  |k == DOWN  = downZ  z
-                  |k == UP    = upZ    z
-                  |k == LEFT  = leftZ  z
-                  |k == RIGHT = rightZ z
-                  |otherwise  = z
+-- navigateTree :: DIRECTION -> SDzipper -> SDzipper
+-- navigateTree k z
+--                   |k == DOWN  = downZ  z
+--                   |k == UP    = upZ    z
+--                   |k == LEFT  = leftZ  z
+--                   |k == RIGHT = rightZ z
+--                   |otherwise  = z
+
+
+navigateProg :: DIRECTION -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+navigateProg k gz
+              |k == DOWN  = downGenZ gz
+              |k == UP    = upGenZ gz
+              |k == LEFT  = leftGenZ gz
+              |k == RIGHT = rightGenZ gz
+              |otherwise = gz
 
 
 {- pretty print the updated syntax tree
    in order to sink it in the textarea.
  -}
+
 
 pprintVec :: V2 Double -> String
 pprintVec (V2 d1 d2) = "(" ++ printf "%.3f" d1 ++ "," ++ printf "%.3f" d2 ++ ")"
@@ -529,7 +500,7 @@ replicateSp n = foldr (++) [] (replicate n "\t")
 
 pprintTree' ::  Int -> SimpleDiagram -> String
 pprintTree' n (Var s)            = replicateSp n ++ s
-pprintTree' n (Assign s sd1 sd2) = replicateSp n ++ "let " ++ s ++ " = \n" ++ pprintTree' (n + 1) sd1 ++ " in \n" ++ pprintTree' (n + 1) sd2
+pprintTree' n (Let s sd1 sd2) = replicateSp n ++ "let " ++ s ++ " = \n" ++ pprintTree' (n + 1) sd1 ++ " in \n" ++ pprintTree' (n + 1) sd2
 pprintTree' n (Pr d)             = replicateSp n ++ (pprintPrim d)
 pprintTree' n (T tra sd)         = replicateSp n ++ (pprintTransfromEdit tra) ++ "\n" ++  pprintTree' (n + 1) sd
 pprintTree' n (Atop sdl sdr)     = replicateSp n ++"atop " ++ "\n"  ++ pprintTree' (n + 1) sdl  ++ "\n"  ++  pprintTree' (n + 1) sdr
