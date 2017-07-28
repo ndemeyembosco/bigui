@@ -1,0 +1,22 @@
+
+.debugg {
+  width: 500px;
+  height: 100px;
+  border: 1px solid black;
+  /*[("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]*/
+}
+
+.button {
+  width: 50px;
+  height: 20px;
+  color: blue;
+  /*[("width", "50px"), ("height", "20px")]*/
+}
+
+.diagram {
+  width: 520px;
+  height: 520px;
+  border: 1px solid black;
+
+  /*[("width", "45%"), ("height", "520px"), ("border", "1px solid #000")]*/
+}
