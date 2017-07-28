@@ -3,14 +3,9 @@
 A functionally reactive program that lets users bi-directionally interact with diagrams. i.e a user is allowed to write code that generates a certain diagram while at the same time, he/she is allowed to manipulate the diagram, by say dragging, updating the same code he/she wrote in real time.
 
 
-<video width="320" height="240" controls>
-  <source src="video1.mp4" type="video/mp4">
-</video>
+![alt-text](giphy.gif)
 
-
-<video width="320" height="240" controls>
-  <source src="video2" type="video/mp4">
-</video>
+![alt-text](giphy-downsized-large.gif)
 
 ---
 
