@@ -14,7 +14,7 @@ A functionally reactive program that lets users bi-directionally interact with d
 
 ---
 
-The following is an explanation of how the program is built using the functional reactive programming library [**Reactive.Threepenny**](https://hackage.haskell.org/package/threepenny-gui-0.8.0.1/docs/Reactive-Threepenny.html) as well as the []**diagrams**](http://projects.haskell.org/diagrams/) library.
+The following is an explanation of how the program is built using the functional reactive programming library [**Reactive.Threepenny**](https://hackage.haskell.org/package/threepenny-gui-0.8.0.1/docs/Reactive-Threepenny.html) as well as the [**diagrams**](http://projects.haskell.org/diagrams/) library.
 
 As of now, this project uses a tiny language defined as follows to declaratively define the diagrams
 
