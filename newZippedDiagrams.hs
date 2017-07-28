@@ -123,6 +123,10 @@ parseTransformEdit :: Parser TransformationEdit
 parseTransformEdit = try (Translate <$> (myreserved "translate" *> parseCoord))
                      <|> (Scale <$> (myreserved "scale" *> mydouble))
                      <|> (Rotate <$> (myreserved "rotate" *> mydouble))
+                     <|> parseCrTr
+
+parseCrTr :: Parser TransformationEdit
+parseCrTr = myreserved "+" *> parseTransformEdit
 
 parseSplit :: Parser [Int]
 parseSplit = mybrackets (mysymbol "/" *> mycommaSep1 myinteger)
@@ -267,7 +271,7 @@ setup window = void $ mdo
 
   let
   -- render diagram
-      simpleDiagramB = unZipGenZ <$> (editZipper Cursor <$> simpleDiagramB')
+      simpleDiagramB = unZipGenZ <$> (cursify <$> simpleDiagramB')
       -- simpleDiagramB = unZipGenZ <$> simpleDiagramB'
       dTupleB        = makeDToDraw' <$> simpleDiagramB
       diagramStrB    = fmap (\(x, y, z) -> x) dTupleB
@@ -311,7 +315,13 @@ runSDdata :: SDdata -> Maybe ((GenZipper, T2 Double) -> (GenZipper, T2 Double))
 runSDdata (FrmCode str)  = case myparse parseProg str of
   Right prog -> Just $ const (makeGenZipper prog)
   _          -> Nothing
-runSDdata (DragCoord cd) = Just $ \zp@(gz, tr) -> refactorSDOnDrag tr cd zp
+runSDdata (DragCoord cd) = Just $ \zp@(gz, tr) -> case gz of
+  (SDZ _ _)     -> refactorSDOnDrag tr cd zp
+  (TransZ _ _)  -> reTransfromZOnDrag cd zp
+  (IntZ _ _)    -> addToIntOnDrag cd zp
+  (DoubleZ _ _) -> addToDoubleOnDrag cd zp
+  _             -> zp
+
 runSDdata (Click pt)     = Just $ \zp@(gz, tr) -> case gz of
   SDZ sd ctx -> editZipper (createNewDiagram (transform tr pt) sd) zp
   _          -> zp
@@ -352,14 +362,29 @@ refactorSDOnDrag :: T2 Double -> V2 Double -> (GenZipper, T2 Double) -> (GenZipp
 refactorSDOnDrag tr v gz = editZipper (refactorTree' (transform (inv tr) v)) gz
 
 
--- refactorTree :: T2 Double -> V2 Double -> SDzipper -> SDzipper
--- refactorTree tr v sz = editZ (refactorTree' (transform (inv tr) v)) sz   -- use inv transformations
-
-
-
 refactorTree' :: V2 Double -> SimpleDiagram -> SimpleDiagram
 refactorTree'  p (T (Translate v) sd)          = T (Translate (p ^+^ v)) sd
 refactorTree'  v  sd                       = T (Translate v) sd
+
+reTransfromTree :: V2 Double -> TransformationEdit -> TransformationEdit
+reTransfromTree v (Scale d)      = Scale ((norm v) + d)
+reTransfromTree v (Translate v1) = Translate (v ^+^ v1)
+reTransfromTree v (Rotate a)     = Rotate (a + 20*(norm v))
+
+addToIntInTree :: V2 Double -> Int -> Int
+addToIntInTree v n = n + ceiling (norm v)
+
+addToDoubleInTree :: V2 Double -> Double -> Double
+addToDoubleInTree v d = d + (norm v)
+
+addToIntOnDrag :: V2 Double -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+addToIntOnDrag v z = editZipper (addToIntInTree v) z
+
+addToDoubleOnDrag :: V2 Double -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+addToDoubleOnDrag v z = editZipper (addToDoubleInTree v) z
+
+reTransfromZOnDrag :: V2 Double -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+reTransfromZOnDrag v z = editZipper (reTransfromTree v) z
 
 
 
@@ -433,6 +458,7 @@ pprintPrim (Triangle) = "triangle"
 pprintPrim (Polygon n)   = "polygon " ++ show n
 
 pprintTransfromEdit :: TransformationEdit -> String
+pprintTransfromEdit (CurTr tr) = "+ " ++ pprintTransfromEdit tr
 pprintTransfromEdit (Scale d) = "scale " ++ show d
 pprintTransfromEdit (Translate v) = "translate " ++ pprintVec v
 pprintTransfromEdit (Rotate a)    = "rotate " ++ show a
@@ -443,8 +469,6 @@ pprintTree = pprintTree' 0
 replicateSp :: Int -> String
 replicateSp n = foldr (++) [] (replicate n "\t")
 
-
---- keep track of boolean cursor, put "->" on meeting it.
 
 pprintTree' ::  Int -> SimpleDiagram -> String
 pprintTree' n (Var s)            = replicateSp n ++ s
@@ -473,6 +497,7 @@ pprintAssign (s, sd) = s ++ " = " ++ pprintTree sd ++ ";"
 
 
 pprintLAssign :: [Assign] -> String
+pprintLAssign [] = ""
 pprintLAssign l = unlines (fmap pprintAssign (reverse $ tail $ reverse l)) ++ ((\(s, sd) -> s ++ " = " ++ pprintTree sd) (last l))
 
 

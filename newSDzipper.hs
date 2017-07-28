@@ -18,7 +18,7 @@ module NewSDzipper
     , GenZipper (..), LAssignGenCtx (..), ProgGenCtx (..), TransCtx (..)
     , DoubleCtx (..), IntCtx (..), VarCtx (..), AssignCtx (..)
     , upGenZ, topGenZ, makeGenZipper, downGenZ, rightGenZ, leftGenZ
-    , upmostGenZ, unZipGenZ, editZipper, Modifyable (..)) where
+    , upmostGenZ, unZipGenZ, editZipper, Modifyable (..), cursify) where
 
 import Diagrams.Prelude
 import qualified Data.Map as M
@@ -46,6 +46,7 @@ data Primitive where
 
 
 data TransformationEdit where
+  CurTr     :: TransformationEdit -> TransformationEdit
   Scale     :: Double       -> TransformationEdit
   Translate :: V2 Double    -> TransformationEdit
   Rotate    :: Double       -> TransformationEdit
@@ -55,8 +56,6 @@ data TransformationEdit where
 
 
 data SDCtx where
-  -- Above     ::
-  -- TopMost   :: Assign         -> AssignCtx     -> SDCtx
   Top          :: SDCtx
   ScaleCtx     :: Double         -> SDCtx          -> SDCtx
   TransCtx     :: V2 Double      -> SDCtx          -> SDCtx
@@ -79,6 +78,7 @@ findTransform :: TransformationEdit -> T2 Double
 findTransform (Scale d)      = scaling d
 findTransform (Translate v)  = translation v
 findTransform (Rotate a)     = rotation (a @@ deg)
+findTransform (CurTr tr)     = findTransform tr
 
 type Assign = (String, SimpleDiagram)
 
@@ -86,21 +86,6 @@ data Prog where
   PVars  :: [Assign]      -> Prog
   PSdia  :: SimpleDiagram -> Prog
   ProgVS :: [Assign]      -> SimpleDiagram -> Prog
-  deriving (Show)
-
-data FocDouble where
-  CurDouble :: FocDouble -> FocDouble
-  Dbl       :: Double    -> FocDouble
-  deriving (Show)
-
-data FocInt where
-  CurInt  :: FocInt -> FocInt
-  FInt    :: Int    -> FocInt
-  deriving (Show)
-
-data FocString where
-  CurStr :: FocString -> FocString
-  FString :: String -> FocString
   deriving (Show)
 
 
@@ -114,6 +99,7 @@ data GenZipper where
   TransZ      :: TransformationEdit  -> TransCtx   -> GenZipper
   VarZ        :: String              -> VarCtx     -> GenZipper
   deriving Show
+
 
 data LAssignGenCtx where
   ProgC :: SimpleDiagram -> ProgGenCtx -> LAssignGenCtx
@@ -150,15 +136,15 @@ data VarCtx where
   deriving (Show)
 
 data AssignCtx where
-  AssignCtx :: [Assign] -> [Assign] -> AssignCtx
+  AssignCtx :: [Assign] -> [Assign] -> SimpleDiagram -> AssignCtx
   deriving (Show)
 
 upGenZ :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 upGenZ z@(gz, tr) = case gz of
   TopGenZ            -> z
   AssignZ ass assctx -> case assctx of
-    (AssignCtx [] r)      -> z
-    (AssignCtx (x:xs) r)  -> (AssignZ x (AssignCtx xs (ass:r)), tr)
+    (AssignCtx [] r sd)      -> (LAssignGenZ (ass:r) (ProgC sd TopGenCtx), tr)--(SDZ sd (LAssignSDCtx (ass:r) TopGenCtx), tr)
+    (AssignCtx (x:xs) r sd)  -> (AssignZ x (AssignCtx xs (ass:r) sd), tr)
     -- revise!!!!
   SDZ     sd  sdctx  -> case sdctx of
     ScaleCtx d ctx      -> (SDZ (T (Scale d) sd) ctx, tr <> inv (scaling d))
@@ -202,8 +188,8 @@ makeGenZipper = topGenZ
 downGenZ :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 downGenZ z@(gz, tr) = case gz of
   -- AssignZ (v, sd) assctx -> (VarZ v (VarAssCtx sd assctx), tr) -- go right
-  AssignZ ass (AssignCtx l (x:xs)) -> (AssignZ x (AssignCtx (ass:l) xs), tr)
-  AssignZ ass (AssignCtx l []) -> z
+  AssignZ ass (AssignCtx l (x:xs) sd) -> (AssignZ x (AssignCtx (ass:l) xs sd), tr)
+  AssignZ ass (AssignCtx l [] sd) -> z
   SDZ     sd  sdctx  -> case sd of
     Atop l r             -> (SDZ l (AtopLCtx sdctx r), tr)
     Let s sd1 sd2        -> (SDZ sd1 (LetVCtx s sdctx sd2), tr) --(VarZ s (VarLetCtx sd1 sd2 sdctx), tr)
@@ -248,25 +234,20 @@ downGenZ z@(gz, tr) = case gz of
       IterCtx n tra m ctx       -> (SDZ (Iterate n tra m (Var v)) ctx, tr)
     VarLetCtx sd1 sd2 sdctx  -> (SDZ sd1 (LetVCtx v sdctx sd2), tr)
     VarAssCtx sd assctx      -> (SDZ sd (VAssignCtx v assctx), tr)  -- go right
-  LAssignGenZ (x:xs) lassctx  -> (AssignZ x (AssignCtx [] xs), tr)
-  -- LAssignGenZ []
-
-
+  LAssignGenZ (x:xs) (ProgC sd prctx)  -> (AssignZ x (AssignCtx [] xs sd), tr)
 
 
 rightGenZ :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 rightGenZ (gz, tr) = case gz of
   SDZ sd (AtopLCtx ctx sd1)          -> (SDZ sd1 (AtopRCtx sd ctx), tr)
   SDZ sd (LetVCtx s ctx sd1)         -> (SDZ sd1 (LetECtx s sd ctx), tr)
-  SDZ sd (IterCtx n tra l sdctx)     -> (IntZ n (IterSIntCtx tra l sd sdctx), tr)
-  SDZ sd (ScaleCtx d ctx)            -> (TransZ (Scale d) (TCtx sd ctx), tr)
-  SDZ sd (TransCtx v ctx)            -> (TransZ (Translate v) (TCtx sd ctx), tr)
-  SDZ sd (RotateCtx a ctx)           -> (TransZ (Rotate a) (TCtx sd ctx), tr)
+  SDZ (Iterate n tra l sd) sdctx     -> (IntZ n (IterSIntCtx tra l sd sdctx), tr)
+  SDZ (T (Scale d) sd) ctx           -> (TransZ (Scale d) (TCtx sd ctx), tr)
+  SDZ (T (Translate v) sd) ctx       -> (TransZ (Translate v) (TCtx sd ctx), tr)
+  SDZ (T (Rotate a) sd) ctx          -> (TransZ (Rotate a) (TCtx sd ctx), tr)
   LAssignGenZ l (ProgC sd prctx)     -> (SDZ sd (LAssignSDCtx l prctx), tr)
   loc                                -> (loc, tr)
 
-
-  -- loc                        ->
 
 leftGenZ :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 leftGenZ (gz, tr) = case gz of
@@ -274,10 +255,10 @@ leftGenZ (gz, tr) = case gz of
   SDZ sd (LetECtx s sd1 ctx)          -> (SDZ sd1 (LetVCtx s ctx sd), tr)
   SDZ sd (LetVCtx s ctx sd1)          -> (VarZ s (VarLetCtx sd sd1 ctx), tr)
   SDZ sd (LAssignSDCtx l prctx)       -> (LAssignGenZ l (ProgC sd prctx), tr)
-  IntZ n (IterSIntCtx tra l sd sdctx) -> (SDZ sd (IterCtx n tra l sdctx), tr)
-  TransZ (Scale d) (TCtx sd ctx)      -> (SDZ sd (ScaleCtx d ctx), tr)
-  TransZ (Translate v) (TCtx sd ctx)  -> (SDZ sd (TransCtx v ctx), tr)
-  TransZ (Rotate a) (TCtx sd ctx)     -> (SDZ sd (RotateCtx a ctx), tr)
+  IntZ n (IterSIntCtx tra l sd sdctx) -> (SDZ (Iterate n tra l sd) sdctx, tr)
+  TransZ (Scale d) (TCtx sd ctx)      -> (SDZ (T (Scale d) sd) ctx, tr)
+  TransZ (Translate v) (TCtx sd ctx)  -> (SDZ (T (Translate v) sd) ctx, tr)
+  TransZ (Rotate a) (TCtx sd ctx)     -> (SDZ (T (Rotate a) sd) ctx, tr)
   loc                                 -> (loc, tr)
 
 
@@ -285,7 +266,7 @@ leftGenZ (gz, tr) = case gz of
 upmostGenZ :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 upmostGenZ z@(LAssignGenZ l (ProgC sd ctx), tr) = (SDZ sd (LAssignSDCtx l ctx), tr)
 upmostGenZ z@(SDZ sd (LAssignSDCtx [] TopGenCtx), tr) = z
--- upmostGenZ z@(SDZ sd (LAssignSDCtx l TopGenCtx), tr)  = z
+upmostGenZ z@(SDZ sd (LAssignSDCtx l TopGenCtx), tr)  = z
 upmostGenZ z = upmostGenZ $ upGenZ z
 
 -- editGenZ
@@ -301,6 +282,12 @@ unZipGenZ z                                   = unZipGenZ $ upmostGenZ z
 
 editZipper :: Modifyable a => (a -> a) -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)
 editZipper = editGenZ
+
+
+cursify :: (GenZipper, T2 Double) -> (GenZipper, T2 Double)
+cursify z@(SDZ _ _, _)     = editGenZ Cursor z
+cursify z@(TransZ _ _, _)  = editGenZ CurTr z
+cursify z                  = z
 
 
 class Modifyable a where
