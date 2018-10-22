@@ -1,117 +1,80 @@
-# BIGUIEL
-
-A functionally reactive program that lets users bi-directionally interact with diagrams. i.e a user is allowed to write code that generates a certain diagram while at the same time, he/she is allowed to manipulate the diagram, by say dragging, updating the same code he/she wrote in real time.
+# A Proof of Concept for a Bi-directional GUI for Rendering Diagrams
 
 
-![alt-text](giphy.gif)
+# Build
 
-![alt-text](giphy-downsized-large.gif)
+- clone the project
+- `cd bigui`
+- `stack build`
+- `stack exec bigui`
 
----
+# GUI Language
 
-The following is an explanation of how the program is built using the functional reactive programming library [**Reactive.Threepenny**](https://hackage.haskell.org/package/threepenny-gui-0.8.0.1/docs/Reactive-Threepenny.html) as well as the [**diagrams**](http://projects.haskell.org/diagrams/) library.
+## Primitives
 
-As of now, this project uses a tiny language defined as follows to declaratively define the diagrams
+This GUI uses a small language developed with it to ease testing out of ideas.
+The language comprises of three primitives:
 
-```haskell
+- **circle**
+- **triangle**
+- **polygon n** (where n is the number of sides of a given polygon)
 
-type Assign = (String, SimpleDiagram)
+## Functions
 
-data Prog where
-  PVars  :: [Assign]      -> Prog
-  PSdia  :: SimpleDiagram -> Prog
-  ProgVS :: [Assign]      -> SimpleDiagram -> Prog
-  deriving (Show)
+The GUI language supports two types of functions. Functions to *transform* a given
+diagram, and functions to combine smaller diagrams into a bigger one.
 
-type Sides = Int
+### Transformations:
+- **scale d** This function scales a given diagram by the given size d.
 
-data SimpleDiagram where
-  Let   :: String        -> SimpleDiagram -> SimpleDiagram -> SimpleDiagram
-  Var      :: String        -> SimpleDiagram
-  Cursor   :: SimpleDiagram -> SimpleDiagram
-  Pr       :: Primitive      -> SimpleDiagram
-  Atop    :: SimpleDiagram  -> SimpleDiagram  -> SimpleDiagram
-  T       :: TransformationEdit -> SimpleDiagram  -> SimpleDiagram
-  Iterate :: Int            -> TransformationEdit -> [Int] -> SimpleDiagram -> SimpleDiagram
-  deriving (Show, Eq)
+     e.g: `scale 1.5 circle`
+- **translate (x,y)** This function translates a given diagram by the vector (x,y).
 
-data Primitive where
-  SEmpty   :: Primitive
-  Circle   :: Primitive
-  Triangle :: Primitive
-  Square   :: Primitive
-  Polygon  :: Sides -> Primitive
-  deriving (Show, Eq)
+     e.g: `translate (1.0, 1.0) triangle`
+- **rotate a** This function rotates a given function by the given angle a in degrees.
 
+     e.g: `rotate 30.0 triangle`
 
-data TransformationEdit where
-  CurTr     :: TransformationEdit -> TransformationEdit
-  Scale     :: Double       -> TransformationEdit
-  Translate :: V2 Double    -> TransformationEdit
-  Rotate    :: Double       -> TransformationEdit
-  deriving (Show, Eq)
-```
-----
+### Combinations:
+- **atop d1 d2** This function puts diagrams d1 and d2 on top of each other to create a new diagram.
 
-### Program Structure/Design
+     e.g: `atop circle polygon 7`
+- **iterate n transformation d** This function applies the given transformation on d n times and puts the resulting diagrams together to create a new diagram.
 
-First and foremost, we need a way to model the different kinds of
-edits that a user can make both the diagram. To do this, diagram data, data type is created.
+     e.g `iterate 5 scale 1.5 atop circle triangle`
 
-```haskell
-data SDdata where
-  FrmCode   :: String   -> SDdata
-  DragCoord :: V2 Double -> SDdata
-  Click     :: P2 Double -> SDdata
-  Nav       :: DIRECTION -> SDdata
-  Split     :: Int       -> SDdata
-  deriving (Show)
-```
+## Focus in language's AST
 
-The names of constructors and what they correspond to are as follows. The **FrmCode str** constructor represents the changes made in the text editor, the **DragCoord v** constructor represents the vector obtained by subtracting the previous position of the mouse from the current position of the mouse while dragging, the **Click pt** constructor corresponds to the point clicked inside the diagram side of the GUI, the **Nav dir** constructor represents the action of navigating through the syntax tree using control keys(or in this version, control buttons), while the **Split n** constructor corresponds to "splitting" a diagram from an iterate node and letting it be its own node in the tree while leaving all the other nodes still "connected".
+The current focus in the AST on which transformations are to be made is indicated in the editor side of
+the GUI by `==>`. The sub diagram that corresponds to node on which is the current focus is seen to be bolder than the rest of the diagram.
 
+## Other features
 
-In order to construct this data type, a function called **mergeEvent** whose type signature is as follows, gets used.
-```haskell
-mergeEvents :: T.Event String -> T.Event (V2 Double) -> T.Event (P2 Double)
-               -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event DIRECTION -> T.Event [(Int, String)] -> T.Event SDdata
-```
-The first **Event String** are the events corresponding to changing the contents of the text editor, and all the other events are completely analogous to their **SDdata** corresponding constructors.
+* The GUI language supports the definition of variables. Variables can be defined before one starts definining the diagram. They have to be enclosed by #.
+       e.g:
+       ```
+       #
+       a = circle;
+       b = triangle;
+       #
+       atop
+          a
+          b
+       ```
+* The **iterate** transformation function has a variant. if defined as **iterate n transformation [/i] d**, The interpretation is that node i has been disconnected from the rest of the nodes.
 
-In order to emulate the behavior that a certain part of the syntax tree is the current focus, which is useful for operations like *navigate*, a [zipper data-structure](https://en.wikibooks.org/wiki/Haskell/Zippers) is used. This zipper is defined as follows:
+  e.g: `iterate 3 scale 1.5 [/2] circle` will generate 2 circles because the second circle in the iteration has been removed.
 
-```haskell
-data GenZipper where
-  TopGenZ     :: GenZipper
-  LAssignGenZ :: [Assign]            -> LAssignGenCtx -> GenZipper
-  AssignZ     :: Assign              -> AssignCtx  -> GenZipper
-  SDZ         :: SimpleDiagram       -> SDCtx      -> GenZipper
-  DoubleZ     :: Double              -> DoubleCtx  -> GenZipper
-  IntZ        :: Int                 -> IntCtx     -> GenZipper
-  TransZ      :: TransformationEdit  -> TransCtx   -> GenZipper
-  VarZ        :: String              -> VarCtx     -> GenZipper
-  deriving Show
-```
+## Diagram side features
+  * In the diagram side of the GUI, you can drag and drop a diagram in focus, and a corresponding transformation vector will be automatically calculated in the editor side.
 
-Each constructor corresponds to a different type of node(these are collectively connected with instances of the `Modifyable a` type class) that we might be focused on in the syntax-tree. This allows us to define different actions/behaviors on the diagram when different types of nodes are focused on. For example, if a user is focused on a translate node and starts dragging the diagram, the diagram in question is going to move in the direction of the drag. Similarly, if a user is focused on a scale node and does the same action(i.e dragging), the diagram is going to become bigger instead.
+  * You can click anywhere, and a copy of the diagram in focus will be inserted at the location where
+  you clicked. (It doesn't actually work like this one. If you click a diagram will be created but not at the exact same location where the click was made.)
 
-The data structure above is defined together with a function **editZipper**
-with type signature `editZipper :: Modifyable a => (a -> a) -> (GenZipper, T2 Double) -> (GenZipper, T2 Double)`. As a matter of fact, this is the function used to define a **Modifyable** instance, the  `T2 Double` represents the current transformation being applied to section of the syntax currently focused on. What this allows us to do is to define different functions each one of type `f :: a -> a` where `a` is different type we might be focused on in the zipper. Thus, like stated in the paragraph above, allowing us,  for example, to scale when focused on a scale node, add when focused on a double or translate when focused on a diagram node, all while responding to the same action of dragging.
+  * The GUI has a text field that can be used to split a diagram from an iterate transformation node.
+  If a valid number is entered into the textfield, a corresponding diagram in the iteration will be detached and corresponding code will be generated.
 
-However, we still have not explained how we go from having, to use **Functional Reactive Programming** terminology, events of type `Event SDdata` to producing a behavior of type  `Behavior GenZipper`.
+## Additional implemantation remarks
 
-In order to do this, first, a function **runSDdata** with type signature `runSDdata :: SDdata -> Maybe ((GenZipper, T2 Double) -> (GenZipper, T2 Double))` is used. As one can probably guess, it takes a zipper and produces another zipper depending on what type of edit was made in the GUI. Second, we the user the `accumB :: accumB :: MonadIO m => a -> Event (a -> a) -> m (Behavior a)` function provided by the **Reactive.Threepenny** library to produce `Behavior (GenZipper, T2 Double)`.
+The GUI is implemented using the concept of *functional reactive programming*. Moreover, A zipper data structure is implemented to simulate moving around the AST of the program.
 
-
-Finally, we use/`fmap` another function `unZipGenZ :: (GenZipper, T2 Double)-> Prog` to unzip the zipper and produce a behavior of program data type.
-```haskell
-data Prog where
-  PVars  :: [Assign]      -> Prog
-  PSdia  :: SimpleDiagram -> Prog
-  ProgVS :: [Assign]      -> SimpleDiagram -> Prog
-  deriving (Show)
-```
-
-This then gets run by fmapping `makeDToDraw' :: Prog -> (String, (T2 Double), (QDiagram SVG V2 Double Any))`. This allows us to break `Behavior Prog` into three behaviors: one for the code that gets sunk back into the text editor, one for the transformation whose inverse allows us to correctly track when points on the diagram are cliked and act accordingly, and one for the diagram itself which allows to sample points clicked as either falling inside the diagram or not in case we needed to use that. (This sampling technique was used in the very first version of this file before we had thought of using  the zippper data structure).
-
-After the `Behavior String` obtained from fmapping `makeDToDraw` onto `Behavior Prog` is sank back into text editor, we once again start tracking changes and constructing `SDdata` appropriately, and the process starts all over again. (a.k.a the RecursiveDo's `mdo` does its job).
