@@ -257,24 +257,99 @@ main = do
 
 setup :: T.Window -> T.UI ()
 setup window = void $ mdo
+  UI.addStyleSheet window ""
 
   -- GUI components set up and styling
-  diagWindow         <- UI.div T.#. "diagram" # T.set T.style [("width", "520px"), ("height", "520px"), ("border", "1px solid #000")]
-  codeArea           <- UI.textarea T.# T.set (T.attr "rows") "20" T.# T.set (T.attr "cols") "100"
-  debuggArea         <- UI.div T.#. "debugg" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
-  debuggArea2        <- UI.div T.#. "debugg2" # T.set T.style [("width", "500px"), ("height", "100px"), ("border", "1px solid #000")]
-  upButton           <- UI.button T.# T.set T.text "up" # T.set T.style [("width", "50px"), ("height", "20px")]
-  downButton         <- UI.button T.# T.set T.text "down" # T.set T.style [("width", "50px"), ("height", "20px")]
-  leftButton         <- UI.button T.# T.set T.text "left" # T.set T.style [("width", "50px"), ("height", "20px")]
-  rightButton        <- UI.button T.# T.set T.text "right" # T.set T.style [("width", "50px"), ("height", "20px")]
-  textfield          <- UI.input T.# T.set (T.attr "type") "text" T.# T.set (T.attr "value") "0"
-  splitTextfield     <- UI.row [UI.string "split: ", T.element textfield]
-  splitButton        <- UI.button T.# T.set T.text "split" # T.set T.style [("width", "50px"), ("height", "20px")]
-  T.getBody window T.#+ [UI.grid [[UI.column [T.element diagWindow, T.element debuggArea]
-                        , UI.column [T.element codeArea, UI.row [T.element upButton, T.element downButton]
-                        , UI.row [T.element leftButton, T.element rightButton], UI.row [T.element splitButton
-                        , T.element splitTextfield], T.element debuggArea2]]]]
-  bodyWindow         <- T.getBody window
+  diagWindow         <- UI.div T.#. "diagram" T.# T.set T.style [("width", "48%")
+                                                           , ("height", "450px")
+                                                           , ("border", "1px solid #000")
+                                                           , ("float", "left")]
+
+  codeArea           <- UI.textarea T.# T.set T.style [  ("height", "98%")
+                                                       , ("width", "98%")
+                                                       , ("padding", "1%")
+                                                       , ("border", "1px solid #000")
+                                                      ]
+
+  -- text fields
+
+  scaleTxtfld        <- UI.input T.#. "scaleTxtfld" T.# attributeList [("type", "text")
+                                                                       , ("placeholer", "0")
+                                                                       ]
+  rotateTxtfld      <- UI.input T.#. "rotateTxtfld" T.# attributeList [("type", "text")
+                                                                       , ("placeholer", "0")
+                                                                       ]
+  iterateTxtfld     <- UI.input T.#. "iterateTxtfld" T.# attributeList [("type", "text")
+                                                                       , ("placeholer", "0")
+                                                                       ]
+
+  transformTxtfld      <- UI.input T.#. "transformTxtfld" T.# attributeList [("type", "text")
+                                                                       , ("placeholer", "0")
+                                                                       ]
+
+  iterCountTxtfld      <- UI.input T.#. "iterCountTxtfld" T.# attributeList [("type", "text")
+                                                                       , ("placeholer", "0")
+                                                                       ]
+  -- buttons
+  upButton          <- UI.button T.#. "upButton"    T.# T.set T.html "UP" T.# T.set T.style [("width", "48%")
+                                                                                             , ("float", "left")
+                                                                                             , ("margin-bottom", "3px")]
+  downButton        <- UI.button T.#. "downButton"  T.# T.set T.html "DOWN" T.# T.set T.style [("width", "48%")
+                                                                                             , ("float", "left")]
+  leftButton        <- UI.button T.#. "leftButton"  T.# T.set T.html "LEFT" T.# T.set T.style [("width", "48%")
+                                                                                             , ("float", "right")
+                                                                                             , ("margin-bottom", "3px")]
+  rightButton       <- UI.button T.#. "rightButton" T.# T.set T.html "RIGHT" T.# T.set T.style [("width", "48%")
+                                                                                             , ("float", "right")]
+  -- forms
+  navForm           <- UI.div T.#. "navForm" T.#+ [UI.thehtml T.# T.set T.html "<h3>Navigate AST</h3><br>"
+                                                               T.# T.set T.style [("text-align", "center")]
+                                                    , UI.div T.#. "row-1" T.# T.set T.style [("width", "100%")] T.#+ [T.element upButton
+                                                           , T.element leftButton]
+                                                    , UI.div T.#. "row-1" T.# T.set T.style [("width", "100%")] T.#+ [T.element downButton
+                                                           , T.element rightButton]
+                                                   ]
+
+  debuggArea2          <- UI.div T.#. "debugger" T.# T.set T.style [("width", "100%")
+                                                                , ("height", "3em")
+                                                                , ("border", "3px")
+                                                                , ("border-style", "dotted")
+                                                                , ("border-color", "coral")]
+
+  transfForm        <- UI.div T.#. "transfForm" T.#+ [UI.thehtml T.# T.set T.html "<h3>Transform</h3><br>"
+                                                                  T.# T.set T.style [("text-align", "center")]
+                                                     , UI.row [UI.thehtml T.# T.set T.html "Scale:"
+                                                               , T.element scaleTxtfld
+                                                               , UI.thehtml T.# T.set T.html "Rotate:"
+                                                               , T.element rotateTxtfld]
+                                                     , UI.thehtml T.# T.set T.html "<h4>Iterate:</h4><br>"
+                                                                  T.# T.set T.style [("text-align", "center")]
+                                                     , UI.row [UI.thehtml T.# T.set T.html "transformation:"
+                                                               , T.element transformTxtfld
+                                                               , UI.thehtml T.# T.set T.html "Iteration count:"
+                                                               , T.element iterCountTxtfld]
+                                                      , UI.row [T.element debuggArea2]
+                                                     ]
+
+
+  -- window/body
+  T.getBody window T.#+ [UI.div T.#. "outer" T.# T.set T.style [("width", "100%")] T.#+ [T.element diagWindow,
+                                  -- UI.div T.#. "empty" T.# T.set T.style [("width", "2px"), ("height", "600px")],
+                                  UI.div T.#. "textArea" T.# T.set T.style [("width", "48%")
+                                                                     , ("height", "450px")
+                                                                     , ("border", "1px solid #000")
+                                                                     , ("float", "right")]
+                                  T.#+ [T.element codeArea]
+                                  ]
+                        , UI.div T.#. "forms" T.# T.set T.style [("width", "100%")] T.#+ [UI.div T.#. "transfForm"
+                                                                                    T.# T.set T.style [("width", "48%"), ("float", "left")]
+                                                                                     T.#+ [T.element transfForm]
+                                                                          , UI.div T.#. "navigateAST"
+                                                                                    T.# T.set T.style [("width", "48%"), ("float", "right")]
+                                                                                     T.#+ [T.element navForm]
+                                                                          ]
+                                  ]
+  -- bodyWindow         <- T.getBody window
 
   let
 
@@ -287,8 +362,8 @@ setup window = void $ mdo
       downClickE          = DOWN  <$ UI.click downButton
       leftClickE          = LEFT  <$ UI.click leftButton
       rightClickE         = RIGHT <$ UI.click rightButton
-      splitClickE         = UI.click splitButton
-      (splitInputE :: T.Event [(Int, String)])        = T.filterE (/= []) (readInt <$> UI.valueChange textfield)
+      -- splitClickE         = UI.click splitButton
+      (splitInputE :: T.Event [(Int, String)])        = T.filterE (/= []) (readInt <$> UI.valueChange iterCountTxtfld)
       spaceE              = (==32) <$> UI.keydown codeArea
 
       -- transform point into diagram coordinates and generate cursors events from it
@@ -409,6 +484,11 @@ createNewDiagram pt sd1 sd = case sd1 of
   _         -> Atop (T (Translate (pt .-. origin)) sd1) sd
 
 
+
+attributeList :: [(String, String)] -> T.UI T.Element -> T.UI T.Element
+{- give list of key, value pairs and where keys are html attributes
+ for the element. -}
+attributeList l u = foldr (\(attr, val) ui -> T.set (T.attr attr) val ui) u l
 
 -- creating and new circle, to be used on click outside of diagram.
 createNewCircle :: P2 Double -> SimpleDiagram
